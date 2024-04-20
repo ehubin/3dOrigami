@@ -40,70 +40,14 @@
                 fa.forEach((f,idx)=>this.createFaceMesh(f,idx,scene));
                 // GUI
                 ui = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI("UI");
-                
-                var rect1 = BABYLON.GUI.Button.CreateSimpleButton("button", "Up(w)");
-                rect1.width = 0.1; // 0.2 = 20%
-                rect1.height = "40px";
-                rect1.cornerRadius = 20;
-                rect1.color = "White";
-                rect1.thickness = 1;
-                rect1.background = "Grey";
-                rect1.onPointerClickObservable.add(() => {
-                    this.translateV([0,1],scene);
-                });
-                rect1.left="12%";
-                rect1.top=10;
-                rect1.horizontalAlignment=BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
-                rect1.verticalAlignment=BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;            
-                ui.addControl(rect1);
-
-                var rect2 = BABYLON.GUI.Button.CreateSimpleButton("button", "Down(s)");
-                rect2.width = 0.1; // 0.2 = 20%
-                rect2.height = "40px";
-                rect2.cornerRadius = 20;
-                rect2.color = "White";
-                rect2.thickness = 1;
-                rect2.background = "Grey";
-                rect2.onPointerClickObservable.add(() => {
-                    this.translateV([0,-1],scene);
-                });
-                rect2.left="12%";
-                rect2.top=60;
-                rect2.horizontalAlignment=BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
-                rect2.verticalAlignment=BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
-                ui.addControl(rect2);
-
-                var rect3 = BABYLON.GUI.Button.CreateSimpleButton("button", "Left(a)");
-                rect3.width = 0.1; // 0.2 = 20%
-                rect3.height = "40px";
-                rect3.cornerRadius = 20;
-                rect3.color = "White";
-                rect3.thickness = 1;
-                rect3.background = "Grey";
-                rect3.onPointerClickObservable.add(() => {
-                    this.translateV([-1,0],scene);
-                });
-                rect3.left="2%";
-                rect3.top=35;
-                rect3.horizontalAlignment=BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
-                rect3.verticalAlignment=BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;            
-                ui.addControl(rect3);
-
-                var rect4 = BABYLON.GUI.Button.CreateSimpleButton("button", "Right(s)");
-                rect4.width = 0.1; // 0.2 = 20%
-                rect4.height = "40px";
-                rect4.cornerRadius = 20;
-                rect4.color = "White";
-                rect4.thickness = 1;
-                rect4.background = "Grey";
-                rect4.onPointerClickObservable.add(() => {
-                    this.translateV([1,0],scene);
-                });
-                rect4.left="22%";
-                rect4.top=35;
-                rect4.horizontalAlignment=BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
-                rect4.verticalAlignment=BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;            
-                ui.addControl(rect4);
+                this.createButton("↑","w",0.04,10,"6%",() => {this.translateV([0,1],scene);});
+                this.createButton("↓","s",0.04,60,"6%",() => {this.translateV([0,-1],scene);});
+                this.createButton("←","a",0.04,35,"1%",() => {this.translateV([-1,0],scene);});
+                this.createButton("→","d",0.04,35,"11%",() => {this.translateV([1,0],scene);});
+                this.createButton("↻","r",0.04,35,"18%",() => {this.rotateFace(5,scene);});
+                this.createButton("↺","t",0.04,35,"23%",() => {this.rotateFace(-5,scene);});
+                this.createButton("fermer","f",0.05,110,"1%",() => {this.closeFacefromV(scene);});
+                this.createButton("nouveau","n",0.06,200,"1%",() => {this.newFace(scene);});
 
                 scene.onKeyboardObservable.add((kbInfo) => {
                     switch (kbInfo.type) {
@@ -134,7 +78,7 @@
                                     case "n":
                                         this.newFace(scene);
                                         break;
-                                    case "c":
+                                    case "f":
                                         this.closeFacefromV(scene);
                                         break;
                                     case "Backspace":
@@ -147,6 +91,21 @@
                         break;
                     }
                 });
+            }
+            createButton(name,short,width,top,left,action) {
+                const b = BABYLON.GUI.Button.CreateSimpleButton("button", name+"("+short+")");
+                b.width = width
+                b.height = "40px";
+                b.cornerRadius = 10;
+                b.color = "White";
+                b.thickness = 1;
+                b.background = "Grey";
+                b.onPointerClickObservable.add(action)
+                b.left=left;
+                b.top=top;
+                b.horizontalAlignment=BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
+                b.verticalAlignment=BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;            
+                ui.addControl(b); 
             }
             createFaceMesh(f,idx,scene) {
                 
