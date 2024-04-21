@@ -18,11 +18,11 @@
         <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-            <h1 class="modal-title fs-5" id="exampleModalLabel">Enregistrez ...</h1>
+            <h1 class="modal-title fs-5" id="exampleModalLabel">Enregistrez cet origami</h1>
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <label for="origamiName" class="col-form-label">Entrez le nom de votre Origami:</label>
+                <label for="origamiName" class="col-form-label">Entrez le nom de votre origami:</label>
                 <input type="text" class="form-control" id="origamiName">
             </div>
             <div class="modal-footer">
@@ -33,24 +33,40 @@
         </div>
     </div>
     <div class="modal fade" id="openDialog">
-        <div class="modal-dialog">
+        <div class="modal-dialog modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
-            <h1 class="modal-title fs-5" id="exampleModalLabel">Enregistrez ...</h1>
+            <h1 class="modal-title fs-5" id="exampleModalLabel">Ouvrir un Origami enregistré</h1>
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
                 <label for="origamiName" class="col-form-label">Choisissez l'origami a ouvrir:</label>
-                <div class="list-group" id="openList" role="tablist">
-                    <a class="list-group-item list-group-item-action active" id="list-home-list" data-bs-toggle="list" href="#list-home" role="tab" aria-controls="list-home">test1</a>
-                    <a class="list-group-item list-group-item-action" id="list-profile-list" data-bs-toggle="list" href="#list-profile" role="tab" aria-controls="list-profile">test 1</a>
-                    <a class="list-group-item list-group-item-action" id="list-messages-list" data-bs-toggle="list" href="#list-messages" role="tab" aria-controls="list-messages">test2</a>
-                    <a class="list-group-item list-group-item-action" id="list-settings-list" data-bs-toggle="list" href="#list-settings" role="tab" aria-controls="list-settings">test 2</a>
-                  </div>
+                <div class="list-group" id="openList" role="tablist"></div>
             </div>
             <div class="modal-footer">
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
             <button type="button" class="btn btn-primary" id="openButton">Ouvrir cet Origami</button>
+            </div>
+        </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="importDialog">
+        <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+            <h1 class="modal-title fs-5" id="exampleModalLabel">Importer un origami reçu par mail</h1>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <label for="importData" class="col-form-label">Entrez le contenu du mail:</label>
+                <input type="text" class="form-control" id="importData" oninput="try{importName.value=JSON.parse(importData.value).name;} catch(e){}">
+                <label for="importName" class="col-form-label">Entrez le nom a enregistrer:</label>
+                <input type="text" class="form-control" id="importName" >
+            </div>
+            <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+            <button type="button" class="btn btn-primary" id="importButton">Importer</button>
             </div>
         </div>
         </div>
@@ -96,6 +112,24 @@
             if(!saved.includes(theOrigami.name)) {saved.push(theOrigami.name); localStorage.saved=JSON.stringify(saved);}
             let value = { pt:theOrigami.points, f:theOrigami.faces};
             localStorage.setItem(theOrigami.name,JSON.stringify(value));
+        });
+
+        const importModal=new bootstrap.Modal('#importDialog');
+        const impName = document.getElementById("importName");
+        const impDat = document.getElementById("importData");
+        document.getElementById('importButton').addEventListener("click",e => {
+            if(impName.value==null || impName.value=="") { alert("Entrez un nom avant import"); return;}
+            let toImport=null;
+            try { toImport=JSON.parse(impDat.value);}
+            catch(e) {
+                alert("Données invalides!"); return; 
+            }
+            importModal.hide();
+            let saved=[];
+            if(localStorage.hasOwnProperty("saved")) saved = JSON.parse(localStorage.saved);
+            if(!saved.includes(impName.value)) {saved.push(impName.value); localStorage.saved=JSON.stringify(saved);} 
+            let value = { pt:toImport.pt, f:toImport.f};
+            localStorage.setItem(impName.value,JSON.stringify(value));
         });
 
         class Origami {            
@@ -146,13 +180,16 @@
                 nouv.width=0.08;nouv.height="40px";
                 ui.addControl(nouv);
                 let panel = new BABYLON.GUI.Grid();
-                panel.addRowDefinition(40,true);panel.addColumnDefinition(0.5); panel.addColumnDefinition(0.5); 
+                panel.addRowDefinition(40,true);
+                panel.addColumnDefinition(0.35); panel.addColumnDefinition(0.23); panel.addColumnDefinition(0.19);panel.addColumnDefinition(0.23);
                 panel.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_RIGHT;
                 panel.verticalAlignment=BABYLON.GUI.Control.VERTICAL_ALIGNMENT_BOTTOM;
-                panel.width=0.2; panel.height="40px";
+                panel.width="380px"; panel.height="40px";
                 
                 panel.addControl(this.createButton("enregistrer","e",0.07,"BR",10,"7%",() => {this.save();}),0,0);
                 panel.addControl(this.createButton("ouvrir","o",0.05,"BR",10,"1%",() => {this.open(scene);}),0,1);
+                panel.addControl(this.createButton("📧","m",0.05,"BR",10,"1%",() => {this.email();}),0,2);
+                panel.addControl(this.createButton("import","i",0.05,"BR",10,"1%",() => {this.import();}),0,3);
                 ui.addControl(panel);  
                 
                 
@@ -162,43 +199,42 @@
                                 console.log(kbInfo.event.key);
                                 switch(kbInfo.event.key) {
                                     case "a":
-                                        this.translateV([1,0],scene);
-                                        break;
+                                        this.translateV([1,0],scene);break;
                                     case "d":
-                                        this.translateV([-1,0],scene);
-                                        break;
+                                        this.translateV([-1,0],scene);break;
                                     case "w":
-                                        this.translateV([0,1],scene);
-                                        break;
+                                        this.translateV([0,1],scene);break;
                                     case "s":
-                                        this.translateV([0,-1],scene);
-                                        break;
+                                        this.translateV([0,-1],scene);break;
                                     case "r":
-                                        this.rotateFace(5,scene);
-                                        break;
+                                        this.rotateFace(5,scene);break;
                                     case "t":
-                                        this.rotateFace(-5,scene);
-                                        break;
+                                        this.rotateFace(-5,scene);break;
                                     case "e":
-                                        this.extendFace(scene);
-                                        break;
+                                        this.extendFace(scene);break;
                                     case "n":
-                                        this.newFace(scene);
-                                        break;
+                                        this.newFace(scene);break;
                                     case "f":
-                                        this.closeFacefromV(scene);
-                                        break;
+                                        this.closeFacefromV(scene);break;
                                     case "Backspace":
-                                        this.deleteFace(scene);
-                                        break;
+                                        this.deleteFace(scene);break;
                                     case "Escape":
-                                        this.unselectFace(scene);
-                                        break;
+                                        this.unselectFace(scene);break;
+                                    case "m":
+                                        this.email();break;
+                                    case "i":
+                                        this.import();break;
                                 }
                         break;
                     }
                 });
             }
+            email() {
+                const toSend=JSON.stringify({name:this.name, pt:this.points, f:this.faces});
+                window.location.href = "mailto:?subject=Origami: " + this.name+"&body="+toSend;
+            }
+            import() { importModal.show(); }
+
             open(scene) {
                 if(!localStorage.hasOwnProperty("saved")) {
                     alert("Aucun origami enregistré!");
