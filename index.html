@@ -86,7 +86,8 @@
         const engine = new BABYLON.Engine(canvas, true);
         const Palette = [[230, 25, 75], [60, 180, 75], [255, 225, 25], [0, 130, 200], [245, 130, 48], [145, 30, 180], [70, 240, 240], [240, 50, 230], [210, 245, 60], [250, 190, 212], [0, 128, 128], [220, 190, 255], [170, 110, 40], [255, 250, 200], [128, 0, 0], [170, 255, 195], [128, 128, 0], [255, 215, 180], [0, 0, 128], [128, 128, 128], [255, 255, 255], [0, 0, 0]].map((c)=>BABYLON.Color3.FromInts(c[0],c[1],c[2]));
         const SphD=0.2;
-        var ui,theOrigami;
+        var ui,theOrigami,nameLbl;
+        
         const openModal = new bootstrap.Modal('#openDialog');       
         const  pattern = (active,name,i) => `<a class="list-group-item list-group-item-action ${active}" id="list-${i}-list" data-bs-toggle="list" href="#list-${i}" role="tab" aria-controls="list-${i}">${name}</a>`;
         const theList=document.getElementById("openList");
@@ -95,8 +96,6 @@
             let selected=theList.querySelector('.active').innerHTML;
             const toOpen=JSON.parse(localStorage[selected]);
             openModal.hide();
-            theOrigami.name=selected;
-            theOrigami.nameLbl.text=this.name;
             theOrigami.disposeAll();
             theOrigami=new Origami(scene,toOpen.pt,toOpen.f,selected);                   
         });
@@ -105,7 +104,7 @@
         const txt=document.getElementById("origamiName"); 
         document.getElementById('saveButton').addEventListener("click",e => {
             theOrigami.name=document.getElementById("origamiName").value;
-            theOrigami.nameLbl.text=this.name;
+            nameLbl.text=theOrigami.name;
             saveModal.hide();
             let saved=[];
             if(localStorage.hasOwnProperty("saved")) saved = JSON.parse(localStorage.saved);
@@ -132,52 +131,48 @@
             localStorage.setItem(impName.value,JSON.stringify(value));
         });
 
-        class Origami {            
-            points=null;
-            faces=null;
-            name="";
-            nameLbl;
-            faceMeshes=[];
-            VSelMeshes=null;
-            ESelMeshes=[];
-            selectedF=null;
-            selectedE=-1;
-            selectedV=-1;
-            constructor(scene,pts,fa,na="") {
-                this.points=pts;
-                this.faces=fa;
-                fa.forEach((f,idx)=>this.createFaceMesh(f,idx,scene));
-                // GUI
-                ui = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI("UI");
-                this.name=na;
-                this.nameLbl = new BABYLON.GUI.TextBlock();
-                this.nameLbl.text = this.name;
-                this.nameLbl.color = "white";
-                this.nameLbl.fontSize = 30;
-                this.nameLbl.textVerticalAlignment=BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
-                this.nameLbl.top=10
-                ui.addControl(this.nameLbl);    
+        function createButton(name,short,action) {
+                const b = BABYLON.GUI.Button.CreateSimpleButton(name, name+"("+short+")");
+                b.cornerRadius = 10;
+                b.color = "White";
+                b.thickness = 1;
+                b.background = "Grey";
+                b.onPointerClickObservable.add(action);
+                b.paddingLeft=5; b.paddingRight=5;
+                b.paddingTop=5; b.paddingBottom=5;        
+                return b; 
+            }
+        function initUI(scene) {
+            // GUI
+            ui = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI("UI");
+                nameLbl = new BABYLON.GUI.TextBlock();
+                nameLbl.text = "";
+                nameLbl.color = "white";
+                nameLbl.fontSize = 30;
+                nameLbl.textVerticalAlignment=BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
+                nameLbl.top=10
+                ui.addControl(nameLbl);    
 
                 let tlgrid=new BABYLON.GUI.Grid(); 
                 tlgrid.horizontalAlignment=BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
                 tlgrid.verticalAlignment=BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
-                tlgrid.top=5;tlgrid.left=5;tlgrid.width=0.3;
-                tlgrid.addColumnDefinition(0.15);tlgrid.addColumnDefinition(0.15);tlgrid.addColumnDefinition(0.15);
-                tlgrid.addColumnDefinition(0.1);tlgrid.addColumnDefinition(0.15);
-                tlgrid.addColumnDefinition(0.1);tlgrid.addColumnDefinition(0.2);
+                tlgrid.top=5;tlgrid.left=5;tlgrid.width=0.4;
+                tlgrid.addColumnDefinition(60,true);tlgrid.addColumnDefinition(60,true);tlgrid.addColumnDefinition(60,true);
+                tlgrid.addColumnDefinition(40,true);tlgrid.addColumnDefinition(60,true);
+                tlgrid.addColumnDefinition(40,true);tlgrid.addColumnDefinition(100,true);
                 tlgrid.addRowDefinition(40,true);tlgrid.addRowDefinition(40,true);
                 ui.addControl(tlgrid);
-                tlgrid.addControl(this.createButton("↑","w",0.04,"TL",10,"6%",() => {this.translateV([0,1],scene);}),0,1);
-                tlgrid.addControl(this.createButton("↓","s",0.04,"TL",60,"6%",() => {this.translateV([0,-1],scene);}),1,1);
-                tlgrid.addControl(this.createButton("←","a",0.04,"TL",35,"1%",() => {this.translateV([-1,0],scene);}),1,0);
-                tlgrid.addControl(this.createButton("→","d",0.04,"TL",35,"11%",() => {this.translateV([1,0],scene);}),1,2);
-                tlgrid.addControl(this.createButton("↻","r",0.04,"TL",35,"18%",() => {this.rotateFace(5,scene);}),0,4);
-                tlgrid.addControl(this.createButton("↺","t",0.04,"TL",35,"23%",() => {this.rotateFace(-5,scene);}),1,4);
-                tlgrid.addControl(this.createButton("fermer","f",0.05,"TL",110,"1%",() => {this.closeFacefromV(scene);}),0,6);
-                let nouv=this.createButton("nouveau","n",0.06,"TR",200,"1%",() => {this.newFace(scene);});
+                tlgrid.addControl(createButton("↑","w",() => {theOrigami.translateV([0,1],scene);}),0,1);
+                tlgrid.addControl(createButton("↓","s",() => {theOrigami.translateV([0,-1],scene);}),1,1);
+                tlgrid.addControl(createButton("←","a",() => {theOrigami.translateV([-1,0],scene);}),1,0);
+                tlgrid.addControl(createButton("→","d",() => {theOrigami.translateV([1,0],scene);}),1,2);
+                tlgrid.addControl(createButton("↻","r",() => {theOrigami.rotateFace(5,scene);}),0,4);
+                tlgrid.addControl(createButton("↺","t",() => {theOrigami.rotateFace(-5,scene);}),1,4);
+                tlgrid.addControl(createButton("fermer","f",() => {theOrigami.closeFacefromV(scene);}),0,6);
+                let nouv=createButton("nouveau","n", () => {theOrigami.newFace(scene);});
                 nouv.horizontalAlignment=BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_RIGHT;
                 nouv.verticalAlignment=BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
-                nouv.width=0.08;nouv.height="40px";
+                nouv.width="120px";nouv.height="40px";
                 ui.addControl(nouv);
                 let panel = new BABYLON.GUI.Grid();
                 panel.addRowDefinition(40,true);
@@ -186,10 +181,10 @@
                 panel.verticalAlignment=BABYLON.GUI.Control.VERTICAL_ALIGNMENT_BOTTOM;
                 panel.width="380px"; panel.height="40px";
                 
-                panel.addControl(this.createButton("enregistrer","e",0.07,"BR",10,"7%",() => {this.save();}),0,0);
-                panel.addControl(this.createButton("ouvrir","o",0.05,"BR",10,"1%",() => {this.open(scene);}),0,1);
-                panel.addControl(this.createButton("📧","m",0.05,"BR",10,"1%",() => {this.email();}),0,2);
-                panel.addControl(this.createButton("import","i",0.05,"BR",10,"1%",() => {this.import();}),0,3);
+                panel.addControl(createButton("enregistrer","e",() => {theOrigami.save();}),0,0);
+                panel.addControl(createButton("ouvrir","o",() => {theOrigami.open(scene);}),0,1);
+                panel.addControl(createButton("📧","m",() => {theOrigami.email();}),0,2);
+                panel.addControl(createButton("import","i",() => {theOrigami.import();}),0,3);
                 ui.addControl(panel);  
                 
                 
@@ -199,36 +194,55 @@
                                 console.log(kbInfo.event.key);
                                 switch(kbInfo.event.key) {
                                     case "a":
-                                        this.translateV([1,0],scene);break;
+                                        theOrigami.translateV([1,0],scene);break;
                                     case "d":
-                                        this.translateV([-1,0],scene);break;
+                                        theOrigami.translateV([-1,0],scene);break;
                                     case "w":
-                                        this.translateV([0,1],scene);break;
+                                        theOrigami.translateV([0,1],scene);break;
                                     case "s":
-                                        this.translateV([0,-1],scene);break;
+                                        theOrigami.translateV([0,-1],scene);break;
                                     case "r":
-                                        this.rotateFace(5,scene);break;
+                                        theOrigami.rotateFace(5,scene);break;
                                     case "t":
-                                        this.rotateFace(-5,scene);break;
+                                        theOrigami.rotateFace(-5,scene);break;
                                     case "e":
-                                        this.extendFace(scene);break;
+                                        theOrigami.extendFace(scene);break;
                                     case "n":
-                                        this.newFace(scene);break;
+                                        theOrigami.newFace(scene);break;
                                     case "f":
-                                        this.closeFacefromV(scene);break;
+                                        theOrigami.closeFacefromV(scene);break;
                                     case "Backspace":
-                                        this.deleteFace(scene);break;
+                                        theOrigami.deleteFace(scene);break;
                                     case "Escape":
-                                        this.unselectFace(scene);break;
+                                        theOrigami.unselectFace(scene);break;
                                     case "m":
-                                        this.email();break;
+                                        theOrigami.email();break;
                                     case "i":
-                                        this.import();break;
+                                        theOrigami.import();break;
                                 }
                         break;
                     }
                 });
-            }
+
+        }
+
+        class Origami {            
+            points=null;
+            faces=null;
+            name="";
+            faceMeshes=[];
+            VSelMeshes=null;
+            ESelMeshes=[];
+            selectedF=null;
+            selectedE=-1;
+            selectedV=-1;
+            constructor(scene,pts,fa,na="") {
+                this.name=na;
+                nameLbl.txt=na;
+                this.points=pts;
+                this.faces=fa;
+                fa.forEach((f,idx)=>this.createFaceMesh(f,idx,scene));
+            }   
             email() {
                 const toSend=JSON.stringify({name:this.name, pt:this.points, f:this.faces});
                 window.location.href = "mailto:?subject=Origami: " + this.name+"&body="+toSend;
@@ -257,17 +271,6 @@
                 saveModal.show();
             }
 
-            createButton(name,short,width,alignment,hdist,vdist,action) {
-                const b = BABYLON.GUI.Button.CreateSimpleButton(name, name+"("+short+")");
-                b.cornerRadius = 10;
-                b.color = "White";
-                b.thickness = 1;
-                b.background = "Grey";
-                b.onPointerClickObservable.add(action);
-                b.paddingLeft=5; b.paddingRight=5;
-                b.paddingTop=5; b.paddingBottom=5;        
-                return b; 
-            }
             createFaceMesh(f,idx,scene) {
                 
                 const Triangle = { "name":"Triangular Prism", "category":["Prism"], 
@@ -526,7 +529,9 @@
             const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(1, 1, 0));
 
             const ground = BABYLON.MeshBuilder.CreateGround("ground", {width: 4, height: 4});
+            initUI(scene);
             theOrigami= new Origami(scene,[[0,0,0.5],[1,0,0.5],[0,1,0.5],[0,0,1.5]],[[0,1,2],[0,3,1],[0,2,3]]);
+            
             return scene;
 
         };
