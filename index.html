@@ -2,12 +2,60 @@
 <head>
     <script src="https://cdn.babylonjs.com/babylon.js"></script>
     <script src="https://cdn.babylonjs.com/gui/babylon.gui.js" type="text/javascript"></script>
+
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js" integrity="sha384-I7E8VVD/ismYTF4hNIPjVp/Zjvgyol6VFvRkX/vR+Vc4jQkC+hVqc2pM8ODewa9r" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.min.js" integrity="sha384-0pUGZvbkm6XF6gxjEnlmuGrJXVbNuzT9qBBavbLwCsOGabYfZo0T0to5eqruptLy" crossorigin="anonymous"></script> 
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+    
     <style>
-        body,#renderCanvas { width: 100%; height: 100%;}
+        body,#renderCanvas { width: 100%; height: 100vh !important;}
     </style>
 </head>
 <body>
     <canvas id="renderCanvas"></canvas>
+   <!-- Modal -->
+    <div class="modal fade" id="saveDialog">
+        <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+            <h1 class="modal-title fs-5" id="exampleModalLabel">Enregistrez ...</h1>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <label for="origamiName" class="col-form-label">Entrez le nom de votre Origami:</label>
+                <input type="text" class="form-control" id="origamiName">
+            </div>
+            <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+            <button type="button" class="btn btn-primary" id="saveButton">Enregistrer les changements</button>
+            </div>
+        </div>
+        </div>
+    </div>
+    <div class="modal fade" id="openDialog">
+        <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+            <h1 class="modal-title fs-5" id="exampleModalLabel">Enregistrez ...</h1>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <label for="origamiName" class="col-form-label">Choisissez l'origami a ouvrir:</label>
+                <div class="list-group" id="openList" role="tablist">
+                    <a class="list-group-item list-group-item-action active" id="list-home-list" data-bs-toggle="list" href="#list-home" role="tab" aria-controls="list-home">test1</a>
+                    <a class="list-group-item list-group-item-action" id="list-profile-list" data-bs-toggle="list" href="#list-profile" role="tab" aria-controls="list-profile">test 1</a>
+                    <a class="list-group-item list-group-item-action" id="list-messages-list" data-bs-toggle="list" href="#list-messages" role="tab" aria-controls="list-messages">test2</a>
+                    <a class="list-group-item list-group-item-action" id="list-settings-list" data-bs-toggle="list" href="#list-settings" role="tab" aria-controls="list-settings">test 2</a>
+                  </div>
+            </div>
+            <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+            <button type="button" class="btn btn-primary" id="openButton">Ouvrir cet Origami</button>
+            </div>
+        </div>
+        </div>
+    </div>
+
     <script>
         //vect utilities
         function vsub(a,b)  { return [a[0]-b[0],a[1]-b[1],a[2]-b[2]];}
@@ -22,33 +70,92 @@
         const engine = new BABYLON.Engine(canvas, true);
         const Palette = [[230, 25, 75], [60, 180, 75], [255, 225, 25], [0, 130, 200], [245, 130, 48], [145, 30, 180], [70, 240, 240], [240, 50, 230], [210, 245, 60], [250, 190, 212], [0, 128, 128], [220, 190, 255], [170, 110, 40], [255, 250, 200], [128, 0, 0], [170, 255, 195], [128, 128, 0], [255, 215, 180], [0, 0, 128], [128, 128, 128], [255, 255, 255], [0, 0, 0]].map((c)=>BABYLON.Color3.FromInts(c[0],c[1],c[2]));
         const SphD=0.2;
-        var ui;
+        var ui,theOrigami;
+        const openModal = new bootstrap.Modal('#openDialog');       
+        const  pattern = (active,name,i) => `<a class="list-group-item list-group-item-action ${active}" id="list-${i}-list" data-bs-toggle="list" href="#list-${i}" role="tab" aria-controls="list-${i}">${name}</a>`;
+        const theList=document.getElementById("openList");
 
-        class Origami {
-            
+        document.getElementById('openButton').addEventListener("click",e => {
+            let selected=theList.querySelector('.active').innerHTML;
+            const toOpen=JSON.parse(localStorage[selected]);
+            openModal.hide();
+            theOrigami.name=selected;
+            theOrigami.nameLbl.text=this.name;
+            theOrigami.disposeAll();
+            theOrigami=new Origami(scene,toOpen.pt,toOpen.f,selected);                   
+        });
+
+        const saveModal = new bootstrap.Modal('#saveDialog');
+        const txt=document.getElementById("origamiName"); 
+        document.getElementById('saveButton').addEventListener("click",e => {
+            theOrigami.name=document.getElementById("origamiName").value;
+            theOrigami.nameLbl.text=this.name;
+            saveModal.hide();
+            let saved=[];
+            if(localStorage.hasOwnProperty("saved")) saved = JSON.parse(localStorage.saved);
+            if(!saved.includes(theOrigami.name)) {saved.push(theOrigami.name); localStorage.saved=JSON.stringify(saved);}
+            let value = { pt:theOrigami.points, f:theOrigami.faces};
+            localStorage.setItem(theOrigami.name,JSON.stringify(value));
+        });
+
+        class Origami {            
             points=null;
             faces=null;
+            name="";
+            nameLbl;
             faceMeshes=[];
             VSelMeshes=null;
             ESelMeshes=[];
             selectedF=null;
             selectedE=-1;
             selectedV=-1;
-            constructor(scene,pts,fa) {
+            constructor(scene,pts,fa,na="") {
                 this.points=pts;
                 this.faces=fa;
                 fa.forEach((f,idx)=>this.createFaceMesh(f,idx,scene));
                 // GUI
                 ui = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI("UI");
-                this.createButton("↑","w",0.04,10,"6%",() => {this.translateV([0,1],scene);});
-                this.createButton("↓","s",0.04,60,"6%",() => {this.translateV([0,-1],scene);});
-                this.createButton("←","a",0.04,35,"1%",() => {this.translateV([-1,0],scene);});
-                this.createButton("→","d",0.04,35,"11%",() => {this.translateV([1,0],scene);});
-                this.createButton("↻","r",0.04,35,"18%",() => {this.rotateFace(5,scene);});
-                this.createButton("↺","t",0.04,35,"23%",() => {this.rotateFace(-5,scene);});
-                this.createButton("fermer","f",0.05,110,"1%",() => {this.closeFacefromV(scene);});
-                this.createButton("nouveau","n",0.06,200,"1%",() => {this.newFace(scene);});
+                this.name=na;
+                this.nameLbl = new BABYLON.GUI.TextBlock();
+                this.nameLbl.text = this.name;
+                this.nameLbl.color = "white";
+                this.nameLbl.fontSize = 30;
+                this.nameLbl.textVerticalAlignment=BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
+                this.nameLbl.top=10
+                ui.addControl(this.nameLbl);    
 
+                let tlgrid=new BABYLON.GUI.Grid(); 
+                tlgrid.horizontalAlignment=BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
+                tlgrid.verticalAlignment=BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
+                tlgrid.top=5;tlgrid.left=5;tlgrid.width=0.3;
+                tlgrid.addColumnDefinition(0.15);tlgrid.addColumnDefinition(0.15);tlgrid.addColumnDefinition(0.15);
+                tlgrid.addColumnDefinition(0.1);tlgrid.addColumnDefinition(0.15);
+                tlgrid.addColumnDefinition(0.1);tlgrid.addColumnDefinition(0.2);
+                tlgrid.addRowDefinition(40,true);tlgrid.addRowDefinition(40,true);
+                ui.addControl(tlgrid);
+                tlgrid.addControl(this.createButton("↑","w",0.04,"TL",10,"6%",() => {this.translateV([0,1],scene);}),0,1);
+                tlgrid.addControl(this.createButton("↓","s",0.04,"TL",60,"6%",() => {this.translateV([0,-1],scene);}),1,1);
+                tlgrid.addControl(this.createButton("←","a",0.04,"TL",35,"1%",() => {this.translateV([-1,0],scene);}),1,0);
+                tlgrid.addControl(this.createButton("→","d",0.04,"TL",35,"11%",() => {this.translateV([1,0],scene);}),1,2);
+                tlgrid.addControl(this.createButton("↻","r",0.04,"TL",35,"18%",() => {this.rotateFace(5,scene);}),0,4);
+                tlgrid.addControl(this.createButton("↺","t",0.04,"TL",35,"23%",() => {this.rotateFace(-5,scene);}),1,4);
+                tlgrid.addControl(this.createButton("fermer","f",0.05,"TL",110,"1%",() => {this.closeFacefromV(scene);}),0,6);
+                let nouv=this.createButton("nouveau","n",0.06,"TR",200,"1%",() => {this.newFace(scene);});
+                nouv.horizontalAlignment=BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_RIGHT;
+                nouv.verticalAlignment=BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
+                nouv.width=0.08;nouv.height="40px";
+                ui.addControl(nouv);
+                let panel = new BABYLON.GUI.Grid();
+                panel.addRowDefinition(40,true);panel.addColumnDefinition(0.5); panel.addColumnDefinition(0.5); 
+                panel.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_RIGHT;
+                panel.verticalAlignment=BABYLON.GUI.Control.VERTICAL_ALIGNMENT_BOTTOM;
+                panel.width=0.2; panel.height="40px";
+                
+                panel.addControl(this.createButton("enregistrer","e",0.07,"BR",10,"7%",() => {this.save();}),0,0);
+                panel.addControl(this.createButton("ouvrir","o",0.05,"BR",10,"1%",() => {this.open(scene);}),0,1);
+                ui.addControl(panel);  
+                
+                
                 scene.onKeyboardObservable.add((kbInfo) => {
                     switch (kbInfo.type) {
                         case BABYLON.KeyboardEventTypes.KEYDOWN:
@@ -92,20 +199,34 @@
                     }
                 });
             }
-            createButton(name,short,width,top,left,action) {
-                const b = BABYLON.GUI.Button.CreateSimpleButton("button", name+"("+short+")");
-                b.width = width
-                b.height = "40px";
+            open(scene) {
+                const allOrig=JSON.parse(localStorage.saved);
+                let ih="";
+                allOrig.forEach((or,i)=>{ih=ih+pattern(i==0?"active":"",or,i);});
+                theList.innerHTML=ih;
+                openModal.show();
+            }
+            disposeAll() {
+                if(this.faceMeshes!= null) this.faceMeshes.forEach(f=>{f.dispose();})
+                if(this.VSelMeshes!= null) this.VSelMeshes.forEach(sm=>{sm.dispose();})
+                if(this.ESelMeshes!= null) this.ESelMeshes.forEach(sm=>{sm.dispose();})
+            }
+
+            save() {
+                txt.value=this.name;
+                saveModal.show();
+            }
+
+            createButton(name,short,width,alignment,hdist,vdist,action) {
+                const b = BABYLON.GUI.Button.CreateSimpleButton(name, name+"("+short+")");
                 b.cornerRadius = 10;
                 b.color = "White";
                 b.thickness = 1;
                 b.background = "Grey";
-                b.onPointerClickObservable.add(action)
-                b.left=left;
-                b.top=top;
-                b.horizontalAlignment=BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
-                b.verticalAlignment=BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;            
-                ui.addControl(b); 
+                b.onPointerClickObservable.add(action);
+                b.paddingLeft=5; b.paddingRight=5;
+                b.paddingTop=5; b.paddingBottom=5;        
+                return b; 
             }
             createFaceMesh(f,idx,scene) {
                 
@@ -365,7 +486,7 @@
             const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(1, 1, 0));
 
             const ground = BABYLON.MeshBuilder.CreateGround("ground", {width: 4, height: 4});
-            o= new Origami(scene,[[0,0,0.5],[1,0,0.5],[0,1,0.5],[0,0,1.5]],[[0,1,2],[0,3,1],[0,2,3]]);
+            theOrigami= new Origami(scene,[[0,0,0.5],[1,0,0.5],[0,1,0.5],[0,0,1.5]],[[0,1,2],[0,3,1],[0,2,3]]);
             return scene;
 
         };
