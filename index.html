@@ -200,6 +200,10 @@
                 });
             }
             open(scene) {
+                if(!localStorage.hasOwnProperty("saved")) {
+                    alert("Aucun origami enregistré!");
+                    return;
+                }
                 const allOrig=JSON.parse(localStorage.saved);
                 let ih="";
                 allOrig.forEach((or,i)=>{ih=ih+pattern(i==0?"active":"",or,i);});
