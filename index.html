@@ -77,18 +77,11 @@
     <script src="origami.js"> </script>
     <script src="ui.js"></script> </script>
     <script>
-        
-        
-
         const canvas = document.getElementById("renderCanvas");
         const engine = new BABYLON.Engine(canvas, true);
         
         var ui,theOrigami,nameLbl;
-        
-        
-
-        
-        
+              
         const createScene = function() {
             const scene = new BABYLON.Scene(engine);
             scene.clearColor = new BABYLON.Color3.Black;
@@ -108,7 +101,6 @@
             theOrigami= new Origami(scene,[[0,0,0.5],[1,0,0.5],[0,1,0.5],[0,0,1.5]],[[0,1,2],[0,3,1],[0,2,3]]);
             
             return scene;
-
         };
 
         scene=createScene();
