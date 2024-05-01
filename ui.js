@@ -92,13 +92,14 @@ class Ui {
         const target = new BABYLON.Vector3(0, 0, 0);
         const camera = new BABYLON.ArcRotateCamera("Camera", alpha, beta, radius, target, scene);
         camera.inputs.attached.mousewheel.wheelPrecision=20;
+        camera.inputs.attached.pointers.panningSensibility=200;
         camera.attachControl(canvas, true);
 
         const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(1, 1, 0));
 
-        const ground = BABYLON.MeshBuilder.CreateGround("ground", {width: 30, height: 30});
+        let g=createGround(1);
 
-
+    
         // GUI
         ui = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI("UI");
         nameLbl = new BABYLON.GUI.TextBlock();
@@ -182,9 +183,52 @@ class Ui {
         const header = BABYLON.GUI.Control.AddHeader(this.dimInput, "Dimension:", "100px", { isHorizontal: true, controlFirst: false });
         header.height = "30px";
         header.color="White";
-        //header.left="70px";
+        //header.horizontalAlignment=BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
+        
+        let gPanel = new BABYLON.GUI.StackPanel();
+        gPanel.isVertical=false;
+        gPanel.horizontalAlignment=BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
+        gPanel.height="40px";
+        let gLbl=new BABYLON.GUI.TextBlock();
+        gLbl.text = "Ground:";
+        gLbl.color = "white";
+        gLbl.width="80px";
+        gPanel.addControl(gLbl);
+
+        let gminus=BABYLON.GUI.Button.CreateSimpleButton("g-", "-");
+        gminus.cornerRadius = 10;
+        gminus.color = "White";
+        gminus.thickness = 1;
+        gminus.background = "Grey";
+        gminus.height="30px";
+        gminus.width="30px";
+        gminus.onPointerClickObservable.add(()=>{
+            if(g.lines.length>0) {
+                gTxt.text=g.lines.length;
+                g=createGround(g.lines.length,g);              
+            }});
+        gPanel.addControl(gminus);
+
+        let gTxt=new BABYLON.GUI.TextBlock();
+        gTxt.text = "1";
+        gTxt.color = "white";
+        gTxt.width="40px";
+        gPanel.addControl(gTxt);
+        let gplus=BABYLON.GUI.Button.CreateSimpleButton("g+", "+");
+        gplus.cornerRadius = 10;
+        gplus.color = "White";
+        gplus.thickness = 1;
+        gplus.background = "Grey";
+        gplus.height="30px";
+        gplus.width="30px";
+        gplus.onPointerClickObservable.add(()=>{
+            gTxt.text=g.lines.length+2;
+            g=createGround(g.lines.length+2,g);          
+        });
+        gPanel.addControl(gplus);
         
         let swPanel = new BABYLON.GUI.StackPanel();
+        swPanel.addControl(gPanel);
         swPanel.addControl(header);
         swPanel.addControl(sw);
 
@@ -352,6 +396,22 @@ const openModal = new bootstrap.Modal('#openDialog');
             let value = { pt:toImport.pt, f:toImport.f,fPos:toImport.fPos,fQuat:toImport.fQuat};
             localStorage.setItem(impName.value,JSON.stringify(value));
         });
+
+        const gW=30;gH=30;
+        function createGround(nb,old=null) {
+            if(old != null) {
+                old.ground.dispose();
+                old.lines.forEach(l=>l.dispose());
+            }
+            const g = BABYLON.MeshBuilder.CreateGround("ground", {width: gW*nb, height: gH});
+            g.position= new BABYLON.Vector3(gW*(1-nb)*0.5,0,0)
+            const l=[]
+            for(let i=0;i<nb-1;++i) {
+                l.push(BABYLON.MeshBuilder.CreateLines("gl1",{points:[new BABYLON.Vector3(gW*(-0.5-i),0,gH/2),new BABYLON.Vector3(gW*(-0.5-i),0,-gH/2)]}));
+                l[i].color=new BABYLON.Color3(0, 0, 0);
+            }
+            return {ground:g,lines :l};
+        }
         
 
 
