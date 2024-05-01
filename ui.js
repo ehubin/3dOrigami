@@ -19,7 +19,8 @@ class Ui {
         "save"      : ()=>theOrigami.save(),
         "open"      : ()=>theOrigami.open(scene),
         "mail"  	: ()=>theOrigami.email(),
-        "import"    : ()=>theOrigami.import() 
+        "import"    : ()=>theOrigami.import(),
+        "switch"    : ()=>theOrigami.switch(this) 
     }
     i18n = {
         "fr": {
@@ -37,7 +38,8 @@ class Ui {
             "save"      : ["enregisrer","e"],
             "open"      : ["ouvrir","o"],
             "mail"  	: ["📧","m"],
-            "import"    : ["importer","i"]
+            "import"    : ["importer","i"],
+            "switch"    : ["mode a plat",";","mode 3D"]
         },
         "en": {
             "up"        : ["↑","w"],
@@ -54,7 +56,8 @@ class Ui {
             "save"      : ["save","v"],
             "open"      : ["open","o"],
             "mail"  	: ["📧","m"],
-            "import"    : ["import","i"]
+            "import"    : ["import","i"],
+            "switch"    : ["print mode",";","3D mode"]
         }
     }
     setLang(l) {
@@ -78,6 +81,22 @@ class Ui {
         return b; 
     }
     constructor(scene) {
+
+        scene.clearColor = new BABYLON.Color3.Black;
+        const canvas = document.getElementById("renderCanvas");
+        const alpha =  Math.PI/4;
+        const beta = Math.PI/3;
+        const radius = 8;
+        const target = new BABYLON.Vector3(0, 0, 0);
+        const camera = new BABYLON.ArcRotateCamera("Camera", alpha, beta, radius, target, scene);
+        camera.inputs.attached.mousewheel.wheelPrecision=40;
+        camera.attachControl(canvas, true);
+
+        const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(1, 1, 0));
+
+        const ground = BABYLON.MeshBuilder.CreateGround("ground", {width: 4, height: 4});
+
+
         // GUI
         ui = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI("UI");
         nameLbl = new BABYLON.GUI.TextBlock();
@@ -128,7 +147,7 @@ class Ui {
         langPanel.addControl(this.addRadio("en", langPanel));
 
         let rect = new BABYLON.GUI.Rectangle();
-        rect.width = "100px";
+        rect.width = "120px";
         rect.height = "70px";
         rect.left=5;
         rect.thickness=0;
@@ -136,26 +155,87 @@ class Ui {
         rect.verticalAlignment=BABYLON.GUI.Control.VERTICAL_ALIGNMENT_BOTTOM;
         rect.addControl(langPanel);
         ui.addControl(rect);
-        // Activate the clipboard events listener
-        ui.registerClipboardEvents();
-
-        // Add event listener to onClipboardObservable
-        ui.onClipboardObservable.add((ev) => {                   
-            if(ev.type === BABYLON.ClipboardEventTypes.COPY){
-                console.log(ev);
-                ev.event.clipboardData.setData("text/plain", "pt = "+JSON.stringify(theOrigami.points)+";\nf = "+JSON.stringify(theOrigami.faces)+";\n");
-
-            }
-        });
+        let sw=this.createButton("switch");
+        sw.horizontalAlignment=BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
+        sw.verticalAlignment=BABYLON.GUI.Control.VERTICAL_ALIGNMENT_BOTTOM;
+        sw.left="70px";
+        sw.width="130px";
+        sw.height="40px";
+        ui.addControl(sw);
         
 
         scene.onKeyboardObservable.add((kbInfo) => {
-            console.log(this.keyCB)
-            //console.log(kbInfo.event.key);
+            console.log(kbInfo.event.key);
             if( kbInfo.type == BABYLON.KeyboardEventTypes.KEYDOWN 
                     && this.keyCB[kbInfo.event.key]) 
                 this.keyCB[kbInfo.event.key]();
+            else if(kbInfo.type = BABYLON.KeyboardEventTypes.KEYUP && 
+                kbInfo.event.key == "c" &&
+                kbInfo.event.ctrlKey) {
+                    //console.log("copy");
+                    navigator.clipboard.writeText("pt = "+JSON.stringify(theOrigami.points)+";\nf = "+JSON.stringify(theOrigami.faces)+";\n");
+            }
         });
+
+        //mouse handling
+
+        let startingPoint;
+        let currentMesh;
+        const getGroundPosition = function () {
+            var pickinfo = scene.pick(scene.pointerX, scene.pointerY, function (mesh) { return mesh.name == "ground"; });
+            return pickinfo.hit ? pickinfo.pickedPoint: null;
+        }
+    
+        const pointerDown = function (mesh) {
+                if(theOrigami.planMode) {
+                    currentMesh = mesh;
+                    startingPoint = getGroundPosition();
+                    if (startingPoint) { // we need to disconnect camera from canvas
+                        setTimeout(function () {
+                            camera.detachControl(canvas);
+                        }, 0);
+                    }
+                }
+        }
+    
+        const pointerUp = function () {
+            if (startingPoint) {
+                camera.attachControl(canvas, true);
+                startingPoint = null;
+                return;
+            }
+        }
+    
+        const pointerMove = function () {
+            if (!startingPoint) {
+                return;
+            }
+            var current = getGroundPosition();
+            if (!current) {
+                return;
+            }
+    
+            var diff = current.subtract(startingPoint);
+            currentMesh.position.addInPlace(diff);
+    
+            startingPoint = current;    
+        }
+
+        scene.onPointerObservable.add((pointerInfo=>{
+            switch (pointerInfo.type) {
+                case BABYLON.PointerEventTypes.POINTERDOWN:
+                    if(pointerInfo.pickInfo.hit && pointerInfo.pickInfo.pickedMesh.name != "ground") {
+                        pointerDown(pointerInfo.pickInfo.pickedMesh)
+                    }
+                    break;
+                case BABYLON.PointerEventTypes.POINTERUP:
+                        pointerUp();
+                    break;
+                case BABYLON.PointerEventTypes.POINTERMOVE:          
+                        pointerMove();
+                    break;
+            }
+        }));
         this.setLang(this.lang);
     }
     addRadio(text, parent,check=false) {
@@ -175,6 +255,10 @@ class Ui {
         header.height = "30px";
         header.color="White";
         return header;   
+    }
+    switchMode(planMode) {
+        this.Controls["switch"].textBlock.text=(planMode?this.i18n[this.lang]["switch"][2]:this.i18n[this.lang]["switch"][0])+
+            "("+this.i18n[this.lang]["switch"][1]+")";
     }
 
 }

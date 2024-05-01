@@ -77,33 +77,15 @@
     <script src="origami.js"> </script>
     <script src="ui.js"></script> </script>
     <script>
-        const canvas = document.getElementById("renderCanvas");
-        const engine = new BABYLON.Engine(canvas, true);
-        
+
         var ui,theOrigami,nameLbl;
-              
-        const createScene = function() {
-            const scene = new BABYLON.Scene(engine);
-            scene.clearColor = new BABYLON.Color3.Black;
 
-            const alpha =  Math.PI/4;
-            const beta = Math.PI/3;
-            const radius = 8;
-            const target = new BABYLON.Vector3(0, 0, 0);
-            const camera = new BABYLON.ArcRotateCamera("Camera", alpha, beta, radius, target, scene);
-            camera.inputs.attached.mousewheel.wheelPrecision=40;
-            camera.attachControl(canvas, true);
-
-            const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(1, 1, 0));
-
-            const ground = BABYLON.MeshBuilder.CreateGround("ground", {width: 4, height: 4});
-            const theGUI=new Ui(scene);
-            theOrigami= new Origami(scene,[[0,0,0.5],[1,0,0.5],[0,1,0.5],[0,0,1.5]],[[0,1,2],[0,3,1],[0,2,3]]);
-            
-            return scene;
-        };
-
-        scene=createScene();
+        
+        const engine = new BABYLON.Engine(canvas, true);
+        const scene = new BABYLON.Scene(engine);
+        const theGUI=new Ui(scene);
+        theOrigami= new Origami(scene,[[0,0,0.5],[1,0,0.5],[0,1,0.5],[0,0,1.5]],[[0,1,2],[0,3,1],[0,2,3]]);
+        
         engine.runRenderLoop(() => scene.render());
     </script>
     
