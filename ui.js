@@ -1,8 +1,10 @@
+var ui,nameLbl;
 class Ui {
-    ui;
+
     lang="fr";
     keyCB={};
     Controls={};
+    dimInput=null;
     
     cb= {
         "up"        : ()=>theOrigami.translateV([0,1],scene),
@@ -20,7 +22,7 @@ class Ui {
         "open"      : ()=>theOrigami.open(scene),
         "mail"  	: ()=>theOrigami.email(),
         "import"    : ()=>theOrigami.import(),
-        "switch"    : ()=>theOrigami.switch(this) 
+        "switch"    : ()=>theOrigami.switch(this,scene) 
     }
     i18n = {
         "fr": {
@@ -86,15 +88,15 @@ class Ui {
         const canvas = document.getElementById("renderCanvas");
         const alpha =  Math.PI/4;
         const beta = Math.PI/3;
-        const radius = 8;
+        const radius = 70;
         const target = new BABYLON.Vector3(0, 0, 0);
         const camera = new BABYLON.ArcRotateCamera("Camera", alpha, beta, radius, target, scene);
-        camera.inputs.attached.mousewheel.wheelPrecision=40;
+        camera.inputs.attached.mousewheel.wheelPrecision=20;
         camera.attachControl(canvas, true);
 
         const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(1, 1, 0));
 
-        const ground = BABYLON.MeshBuilder.CreateGround("ground", {width: 4, height: 4});
+        const ground = BABYLON.MeshBuilder.CreateGround("ground", {width: 30, height: 30});
 
 
         // GUI
@@ -155,14 +157,42 @@ class Ui {
         rect.verticalAlignment=BABYLON.GUI.Control.VERTICAL_ALIGNMENT_BOTTOM;
         rect.addControl(langPanel);
         ui.addControl(rect);
+        
+        // switch mode 3D/plane
         let sw=this.createButton("switch");
-        sw.horizontalAlignment=BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
-        sw.verticalAlignment=BABYLON.GUI.Control.VERTICAL_ALIGNMENT_BOTTOM;
-        sw.left="70px";
+        //sw.horizontalAlignment=BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
+        //sw.verticalAlignment=BABYLON.GUI.Control.VERTICAL_ALIGNMENT_BOTTOM;
+        //sw.left="70px";
         sw.width="130px";
         sw.height="40px";
-        ui.addControl(sw);
+        sw.horizontalAlignment=BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
         
+        // manage object size
+        this.dimInput = new BABYLON.GUI.InputText();
+        this.dimInput.width = "80px";
+        this.dimInput.maxWidth = "80px";
+        this.dimInput.height = "30px";
+        this.dimInput.text = "20";
+        this.dimInput.color = "white";
+        this.dimInput.background = "green";
+        this.dimInput.onTextChangedObservable.add((ev) => {
+            if(ev.text == "") return;
+            theOrigami.setDimension(parseInt(ev.text),scene);
+        });  
+        const header = BABYLON.GUI.Control.AddHeader(this.dimInput, "Dimension:", "100px", { isHorizontal: true, controlFirst: false });
+        header.height = "30px";
+        header.color="White";
+        //header.left="70px";
+        
+        let swPanel = new BABYLON.GUI.StackPanel();
+        swPanel.addControl(header);
+        swPanel.addControl(sw);
+
+        swPanel.left="90px";
+        swPanel.horizontalAlignment=BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
+        swPanel.verticalAlignment=BABYLON.GUI.Control.VERTICAL_ALIGNMENT_BOTTOM;
+        swPanel.adaptWidthToChildren =true;
+        ui.addControl(swPanel);
 
         scene.onKeyboardObservable.add((kbInfo) => {
             console.log(kbInfo.event.key);
@@ -173,7 +203,7 @@ class Ui {
                 kbInfo.event.key == "c" &&
                 kbInfo.event.ctrlKey) {
                     //console.log("copy");
-                    navigator.clipboard.writeText("pt = "+JSON.stringify(theOrigami.points)+";\nf = "+JSON.stringify(theOrigami.faces)+";\n");
+                    theOrigami.writeToClip();
             }
         });
 
@@ -189,12 +219,14 @@ class Ui {
         const pointerDown = function (mesh) {
                 if(theOrigami.planMode) {
                     currentMesh = mesh;
+                    //console.log("-->>"+mesh.name+";"+theOrigami.faceMeshes.indexOf(mesh));
                     startingPoint = getGroundPosition();
                     if (startingPoint) { // we need to disconnect camera from canvas
                         setTimeout(function () {
                             camera.detachControl(canvas);
                         }, 0);
                     }
+                    theOrigami.selectedF=theOrigami.getFace(mesh);
                 }
         }
     
@@ -260,6 +292,9 @@ class Ui {
         this.Controls["switch"].textBlock.text=(planMode?this.i18n[this.lang]["switch"][2]:this.i18n[this.lang]["switch"][0])+
             "("+this.i18n[this.lang]["switch"][1]+")";
     }
+    setName(n) {
+        nameLbl.text=n;
+    }
 
 }
 
@@ -274,7 +309,17 @@ const openModal = new bootstrap.Modal('#openDialog');
             const toOpen=JSON.parse(localStorage[selected]);
             openModal.hide();
             theOrigami.disposeAll();
-            theOrigami=new Origami(scene,toOpen.pt,toOpen.f,selected);                   
+            let q=null,p=null;
+            if(toOpen.hasOwnProperty("fQuat")) {
+                p=[];
+                q=[];
+                toOpen.fQuat.forEach(qa => {
+                    q.push(new BABYLON.Quaternion(qa._x,qa._y,qa._z,qa._w));
+                });
+                toOpen.fPos.forEach(po => p.push(new BABYLON.Vector3(po._x,po._y,po._z)));
+            }
+            theOrigami=new Origami(scene,theOrigami.GUI,toOpen.pt,toOpen.f,selected,p,q);
+            theOrigami.updateUIDim();                   
         });
 
         const saveModal = new bootstrap.Modal('#saveDialog');
@@ -286,7 +331,7 @@ const openModal = new bootstrap.Modal('#openDialog');
             let saved=[];
             if(localStorage.hasOwnProperty("saved")) saved = JSON.parse(localStorage.saved);
             if(!saved.includes(theOrigami.name)) {saved.push(theOrigami.name); localStorage.saved=JSON.stringify(saved);}
-            let value = { pt:theOrigami.points, f:theOrigami.faces};
+            let value = { pt:theOrigami.points, f:theOrigami.faces,fPos:theOrigami.flatPos,fQuat:theOrigami.flatQuat};
             localStorage.setItem(theOrigami.name,JSON.stringify(value));
         });
 
@@ -304,9 +349,10 @@ const openModal = new bootstrap.Modal('#openDialog');
             let saved=[];
             if(localStorage.hasOwnProperty("saved")) saved = JSON.parse(localStorage.saved);
             if(!saved.includes(impName.value)) {saved.push(impName.value); localStorage.saved=JSON.stringify(saved);} 
-            let value = { pt:toImport.pt, f:toImport.f};
+            let value = { pt:toImport.pt, f:toImport.f,fPos:toImport.fPos,fQuat:toImport.fQuat};
             localStorage.setItem(impName.value,JSON.stringify(value));
         });
+        
 
 
 

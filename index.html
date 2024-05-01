@@ -78,14 +78,13 @@
     <script src="ui.js"></script> </script>
     <script>
 
-        var ui,theOrigami,nameLbl;
-
+        var theOrigami;
         
-        const engine = new BABYLON.Engine(canvas, true);
+        const engine = new BABYLON.Engine(document.getElementById("renderCanvas"), true);
         const scene = new BABYLON.Scene(engine);
         const theGUI=new Ui(scene);
-        theOrigami= new Origami(scene,[[0,0,0.5],[1,0,0.5],[0,1,0.5],[0,0,1.5]],[[0,1,2],[0,3,1],[0,2,3]]);
-        
+        theOrigami= new Origami(scene,theGUI,[[0,0,0],[10,0,0],[0,10,0],[0,0,10]],[[0,1,2],[0,3,1],[0,2,3]]);
+        theOrigami.updateUIDim();
         engine.runRenderLoop(() => scene.render());
     </script>
     

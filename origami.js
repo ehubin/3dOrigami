@@ -13,6 +13,8 @@ function vnormalize(v) { return smult(1/vnorm(v),v); }
 class Origami {            
     points=null;
     faces=null;
+    flatPos=[];
+    flatQuat=[];
     name="";
     planMode=false;
     faceMeshes=[];
@@ -21,13 +23,20 @@ class Origami {
     selectedF=null;
     selectedE=-1;
     selectedV=-1;
-    constructor(scene,pts,fa,na="") {
+    GUI=null;
+    constructor(scene,gui,pts,fa,na="<Sans Nom>",fpos=null,fqat=null) {
+        this.GUI=gui;
         this.name=na;
+        gui.setName(na);
         this.points=pts;
         this.faces=fa;
-        fa.forEach((f,idx)=>this.createFaceMesh(f,idx,scene));
+        fa.forEach((f,idx)=>{
+            this.createFaceMesh(f,idx,scene);
+            this.flatQuat.push(fqat==null?this.getRot(f):fqat[idx]);
+            this.flatPos.push(fpos==null?this.getCenter(f).scale(-1):fpos[idx]);
+        });
     }
-    switch(ui) {
+    switch(ui,scene) {
         if(this.planMode) {
             this.planMode=false;
             ui.switchMode(false);
@@ -36,11 +45,12 @@ class Origami {
                 fm.position=BABYLON.Vector3.Zero();
             });
         } else {
+            this.unselectFace(scene);
             this.planMode=true;
             ui.switchMode(true);
             this.faceMeshes.forEach((fm,i)=>{
-                fm.rotationQuaternion=this.getRot(this.faces[i]);
-                fm.position=this.getCenter(this.faces[i]).scale(-1);
+                fm.rotationQuaternion=this.flatQuat[i];
+                fm.position=this.flatPos[i];
             });
         }
     }
@@ -50,8 +60,9 @@ class Origami {
         return BABYLON.Vector3.Zero().fromArray(smult(1/f.length,sum));
     }
     email() {
-        const toSend=JSON.stringify({name:this.name, pt:this.points, f:this.faces});
-        window.location.href = "mailto:?subject=Origami: " + this.name+"&body="+toSend;
+        //const toSend=JSON.stringify({name:this.name, pt:this.points, f:this.faces, fp:this.flatPos,fq:this.flatQuat});
+        this.writeToClip();
+        window.location.href = "mailto:?subject=Origami: " + this.name+"&body= clique droit coller pour rajouter les données de l'origami\n\n";
     }
     import() { importModal.show(); }
 
@@ -83,7 +94,7 @@ class Origami {
             "vertex":this.computeFaceVertex(f),
             "face":[[0,1,2],[3,5,4],[0,2,5,3],[2,1,4,5],[1,0,3,4]]};
         //console.log(Triangle.vertex); 
-        const Prism = BABYLON.MeshBuilder.CreatePolyhedron("h", {custom: Triangle}, scene);
+        const Prism = BABYLON.MeshBuilder.CreatePolyhedron("Face["+idx+"]", {custom: Triangle}, scene);
         Prism.actionManager =new BABYLON.ActionManager(scene);
         let _t=this;
         Prism.actionManager.registerAction(new BABYLON.ExecuteCodeAction(BABYLON.ActionManager.OnPickTrigger, 
@@ -111,7 +122,7 @@ class Origami {
         if(this.planMode ) {
             let sel=this.faces.indexOf(this.selectedF);
             this.faceMeshes[sel].position.addInPlace( new BABYLON.Vector3(dir[0]*0.1,0,dir[1]*0.1));
-
+            this.flatPos[sel]=this.faceMeshes[sel].position;
         } else {
             if(this.selectedV==-1) return;
             let f=this.selectedF,v=this.points[f[this.selectedV]];
@@ -126,12 +137,14 @@ class Origami {
             this.VSelMeshes[this.selectedV].position=new BABYLON.Vector3(v[0], v[1], v[2]);
             this.reComputeESel(this.selectedF);
         }
+        this.updateUIDim();
     }
     rotateFace(angle,scene) {
         if(this.selectedF==null) return;
         if(this.planMode) {
             let sel=this.faces.indexOf(this.selectedF);
             this.faceMeshes[sel].rotationQuaternion = BABYLON.Quaternion.RotationAxis(new BABYLON.Vector3(0,1,0),angle*Math.PI/180).multiplyInPlace(this.faceMeshes[sel].rotationQuaternion);
+            this.flatQuat[sel]=this.faceMeshes[sel].rotationQuaternion;
         } else {
             if(this.selectedV==-1) return;
             let f=this.selectedF,v=this.points[f[this.selectedV]];
@@ -147,6 +160,7 @@ class Origami {
             this.VSelMeshes[this.selectedV].position=new BABYLON.Vector3(v[0], v[1], v[2]);
             this.reComputeESel(this.selectedF);
         }
+        this.updateUIDim();
     }
     
 
@@ -157,6 +171,8 @@ class Origami {
                 if(pt==idx) {
                     orig.faceMeshes[i].dispose();
                     this.createFaceMesh(f,i,scene);
+                    this.flatPos[i]=this.getCenter(f).scale(-1);
+                    this.flatQuat[i]=this.getRot(f);
                     return true;
                 }
                 return false;
@@ -178,22 +194,7 @@ class Origami {
             });
         }
         if(this.planMode) {
-            this.selectedF=f;/*
-            this.VSelMeshes[0].isVisible=true;
-            
-            const __m=this.VSelMeshes[0],__f=this.faceMeshes[i],__t=this;
-            __m.isPickable=false;
-            __f.isPickable=false;
-
-            scene.onPointerMove = function (evt, result) {
-                    var pickResult = scene.pick(evt.offsetX, evt.offsetY);
-                    if (pickResult.hit && pickResult.pickedMesh.name == "ground") {                       
-                        __m.position= pickResult.pickedPoint;
-                        __f.position=pickResult.pickedPoint.add(__t.getCenter(f).scale(-1));
-                }
-            }
-            return;
-            */
+            this.selectedF=f;
         } else {
             this.reComputeESel(f);
             for(let j=f.length;j<10;++j) {
@@ -206,8 +207,10 @@ class Origami {
         }
     }
     unselectFace(scene) {
-        for(let j=0;j<10;++j) {
+        if(this.VSelMeshes != null) {
+            for(let j=0;j<this.VSelMeshes.length;++j) {
             this.VSelMeshes[j].isVisible = false;
+            }
         }
         this.ESelMeshes.forEach(m=>m.dispose());
         this.ESelMeshes=[];
@@ -216,22 +219,28 @@ class Origami {
         this.selectVertex(-1,scene); 
     }
     reComputeESel(f) {
+        //compute average side length
+        let fSize=vnorm(vsub(this.points[f[0]],this.points[f[f.length-1]]));
+        for(let i=0;i<f.length-1;++i) fSize+=vnorm(vsub(this.points[f[i]],this.points[f[i+1]]));
+        fSize=fSize/f.length;
+        console.log(fSize);
         this.ESelMeshes.forEach(m=>m.dispose());
         this.ESelMeshes=[];
         for(let j=0;j<f.length;++j) {
             let p= this.points[f[j]];
             this.VSelMeshes[j].position = new BABYLON.Vector3(p[0], p[1], p[2]);
+            this.VSelMeshes[j].scaling = new BABYLON.Vector3(fSize,fSize,fSize);
             this.VSelMeshes[j].isVisible=true;                   
-            this.ESelMeshes.push(this.getEdgeCyl(f,j,scene));
+            this.ESelMeshes.push(this.getEdgeCyl(f,j,scene,fSize));
         }
     }
-    getEdgeCyl(f,edgeIdx,scene) {
+    getEdgeCyl(f,edgeIdx,scene,fSize) {
             let p1=new BABYLON.Vector3().fromArray(this.points[f[edgeIdx]]);
             let p2=new BABYLON.Vector3().fromArray(this.points[f[(edgeIdx+1)%f.length]]);
-            let distance = BABYLON.Vector3.Distance(p1,p2 )-SphD;
+            let distance = BABYLON.Vector3.Distance(p1,p2 )-SphD*fSize;
         
             let cylinder = BABYLON.MeshBuilder.CreateCylinder("cylinder", 
-                {height:distance, diameterTop:0.1, diameterBottom:0.1, tessellation:6, subdivisions:1}, scene);
+                {height:distance, diameterTop:0.1*fSize, diameterBottom:0.1*fSize, tessellation:6, subdivisions:1}, scene);
             cylinder.material = new BABYLON.StandardMaterial("material", scene);
             cylinder.actionManager =new BABYLON.ActionManager(scene);
             let _t=this;
@@ -247,7 +256,7 @@ class Origami {
             return cylinder;
     }
     selectVertex(i,scene) {
-        this.VSelMeshes.forEach((m,idx)=> { m.material.diffuseColor=(i==idx?BABYLON.Color3.Yellow():BABYLON.Color3.White()); });
+        if(this.VSelMeshes != null) this.VSelMeshes.forEach((m,idx)=> { m.material.diffuseColor=(i==idx?BABYLON.Color3.Yellow():BABYLON.Color3.White()); });
         this.selectedV=i;
         if(i>=0) console.log("Selected V"+this.selectedF[i]);
     }
@@ -264,21 +273,26 @@ class Origami {
         if(this.findFacesContaining(p1i,p2i).length ==2) return; // edge already has 2 faces cannot add one
         let cam=scene.activeCamera.getForwardRay().direction;
         let base=p2.subtract(p1);
-        let mid=p1.add(p2.subtract(p1).scale(0.5));
+        let mid=p1.add(base.scale(0.5));
         //let lines = BABYLON.MeshBuilder.CreateLines("lines", { points:[mid,mid.add(cam)] }, scene);
-        let newPt=mid.add(cam.applyRotationQuaternion(BABYLON.Quaternion.RotationAxis(base,120*Math.PI/180)).scale(0.707));
+        cam.applyRotationQuaternionInPlace(BABYLON.Quaternion.RotationAxis(base.clone(),120*Math.PI/180));
+        let newPt=mid.add(cam.scale(0.707*base.length()));
         //console.log(newPt);
         let newFace=[p2i,p1i,this.points.length];
         this.points.push([newPt.x,newPt.y,newPt.z]);
-        this.faces.push(newFace);               
+        this.faces.push(newFace);
+        this.flatPos.push(this.getCenter(newFace).scale(-1));
+        this.flatQuat.push(this.getRot(newFace));               
         this.createFaceMesh(newFace,this.faces.length-1,scene);
         this.selectFace(this.faces.length-1,scene);
+        this.updateUIDim();
     }
     extendFace(scene) {
         if(this.selectedE<0) return;
         let p1i=this.selectedE, p2i=(this.selectedE+1)%f.length;
         let p1=new BABYLON.Vector3().fromArray(this.points[p1i]);
         let p2=new BABYLON.Vector3().fromArray(this.points[p2i]);
+        this.updateUIDim();
 
     }
     findFacesContaining(p1,p2) {
@@ -290,6 +304,7 @@ class Origami {
         })
         return res;
     }
+    
     closeFacefromV(scene) {
         if(this.selectedV <0) return;
         let curV=this.selectedF[this.selectedV];
@@ -300,6 +315,8 @@ class Origami {
         this.faces.push(newFace);               
         this.createFaceMesh(newFace,this.faces.length-1,scene);
         this.selectFace(this.faces.length-1,scene);
+        this.flatPos.push(this.getCenter(newFace).scale(-1));
+        this.flatQuat.push(this.getRot(newFace));
 
     }
     findFreeEdges(v) {
@@ -342,7 +359,10 @@ class Origami {
         this.faces.splice(sel,1);
         this.faceMeshes[sel].dispose();
         this.faceMeshes.splice(sel,1);
+        this.flatPos.splice(sel,1);
+        this.flatPos.splice(sel,1);
         for(const v of toBeDeleted) this.delPt(v);
+        this.updateUIDim();
     }
     delPt(vIdx) {
         this.points.splice(vIdx,1);
@@ -374,24 +394,54 @@ class Origami {
         const fwd=vnormalize(vadd(v1,v2));
         return BABYLON.Quaternion.FromLookDirectionLH(BABYLON.Vector3.Zero().fromArray(fwd),BABYLON.Vector3.Zero().fromArray(n)).invert();
     }
-    getFlatCoords() {
-        let am=[],res=[];
-        for(let f of this.faceMeshes) { const lam = f.clone(); lam.setEnabled(false); am.push(lam);}
-        
-        for(let i=0;i<this.faces.length;++i) {
-            res[i]=[];
-            let f=this.faces[i];
-            am[i].rotationQuaternion = this.getRot(f);
-            let c=[0,0,0];
-            for(let p of f) c=vadd(c,this.points[p]);
-            c= smult(-1/f.length,c);
-            let wm=new BABYLON.Matrix();
-            wm= am[i].computeWorldMatrix(true);
-            am[i].position=BABYLON.Vector3.TransformCoordinates(BABYLON.Vector3.Zero().fromArray(c),wm);
-            wm=am[i].computeWorldMatrix(false);
-            res[i]=am[i].position;
+    updateUIDim() {   this.GUI.dimInput.text=Math.round(this.getDimension());}
+ 
+    getDimension() {
+        let p1,p2,max=0,cur;
+        for(let i=0;i<this.points.length;++i) {
+            for(let j=i+1;j<this.points.length;++j) {
+                p1=this.points[i],p2=this.points[j];
+                cur=vnorm(vsub(p1,p2));
+                if(cur>max) max=cur;
+            }
         }
+        return max;
+    }
+    setDimension(newDim,scene) {
+        if (isNaN(newDim)) return;
+        console.log("++>"+newDim);
+        let curDim=this.getDimension();
+        if(newDim == Math.round(curDim)) {
+            console.log(newDim+ "=> no dim change");
+        } else {
+            let sc=newDim/curDim;
+            this.points.forEach(p=>{p[0]*=sc;p[1]*=sc;p[2]*=sc});
+            this.unselectFace(scene);
+            this.face
+            this.faces.forEach((f,idx)=>{
+                this.faceMeshes[idx].dispose();
+                this.createFaceMesh(f,idx,scene);
+                this.flatPos[idx]=this.getCenter(f).scale(-1);
+                this.flatQuat[idx]=this.getRot(f);
+            });
+        }
+    }
+    getFlatCoords() {
+        res=[];
+        this.faces.foreach((f,i)=>{
+
+        });
         return res;
     }
-    
+    getFace(fmesh) { return this.faces[this.faceMeshes.indexOf(fmesh)];}
+    writeToClip() {
+        let exportVal=JSON.stringify(
+            {   name:this.name,
+                pt:this.points,
+                f:this.faces,
+                fPos:this.flatPos,
+                fQuat:this.flatQuat
+            })
+            navigator.clipboard.writeText(exportVal);
+    }   
 }
