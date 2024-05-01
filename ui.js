@@ -33,7 +33,7 @@ class Ui {
             "extend"    : ["","x"],                 
             "new"       : ["nouveau","n"],
             "close"     : ["fermer","f"],
-            "del"       : ["effacer",""],
+            "del"       : ["effacer","Backspace"],
             "esc"       : ["unselect","Escape"],
             "save"      : ["enregisrer","e"],
             "open"      : ["ouvrir","o"],
