@@ -407,41 +407,41 @@ class Ui {
             else if (kbInfo.type == BABYLON.KeyboardEventTypes.KEYUP &&
                 kbInfo.event.key == "c" &&
                 kbInfo.event.ctrlKey) {
-                //console.log("copy");
-                //theOrigami.writeToClip(scene);
-                let med = computeMedial(theOrigami, 1), str = "data=[\n";
+                // Per-face inset prism geometry as a JS data array, using v2
+                // medial + current insetDepth slider. World-matrix-transformed
+                // so plan-mode positions are baked in.
+                let str = "data=[\n";
                 theOrigami.faces.forEach((f, fi) => {
-                    let wm = theOrigami.faceMeshes[fi].getWorldMatrix(true);
-                    let r = theOrigami.getScadPolyhedron(fi, med);
+                    const wm = theOrigami.faceMeshes[fi].getWorldMatrix(true);
+                    const r = theOrigami.getInsetPolyhedron(fi, theOrigami.medial, theOrigami.insetDepth);
                     str += "[[";
                     r.pt.forEach(p => {
-                        let lp = global(p, wm);
+                        const lp = global(p, wm);
                         str += "[" + lp.x + "," + lp.y + "," + lp.z + "],";
                     });
-                    str += "],\n";
-                    str += "[";
+                    str += "],\n[";
                     r.idx.forEach(p => str += "[" + p + "],");
                     str += "]],\n";
                 });
-                str += "];"
+                str += "];";
                 navigator.clipboard.writeText(str);
             } else if (kbInfo.type == BABYLON.KeyboardEventTypes.KEYUP &&
                 kbInfo.event.key == "b" &&
                 kbInfo.event.ctrlKey) {
-                //console.log("copy");
-                //theOrigami.writeToClip(scene);
-                let med = computeMedial(theOrigami, 1), str = "";
+                // SVG path of each face's inset polygon outline (v2 layout
+                // puts the inset polygon at idx[0]).
+                let str = "";
                 theOrigami.faces.forEach((f, fi) => {
-                    let wm = theOrigami.faceMeshes[fi].getWorldMatrix(true);
-                    let r = theOrigami.getScadPolyhedron(fi, med);
-                    r.idx[r.idx.length - 1].forEach((idx, i) => {
-                        let lp = global(r.pt[idx], wm);
+                    const wm = theOrigami.faceMeshes[fi].getWorldMatrix(true);
+                    const r = theOrigami.getInsetPolyhedron(fi, theOrigami.medial, theOrigami.insetDepth);
+                    r.idx[0].forEach((idx, i) => {
+                        const lp = global(r.pt[idx], wm);
                         str += (i == 0 ? "M " : "L ");
                         str += (lp.x + " " + lp.z + " ");
                     });
                     str += "z\n";
-                    navigator.clipboard.writeText(str);
                 });
+                navigator.clipboard.writeText(str);
             } else if (kbInfo.type == BABYLON.KeyboardEventTypes.KEYUP &&
                 kbInfo.event.key.toLowerCase() == "v" &&
                 kbInfo.event.altKey) {
@@ -514,6 +514,21 @@ class Ui {
                     BABYLON.Tags.AddTagsTo(mesh, "inset_vis");
                 });
                 console.log(`Built ${theOrigami.faces.length} inset prisms.`);
+            } else if (kbInfo.type == BABYLON.KeyboardEventTypes.KEYUP &&
+                kbInfo.event.key.toLowerCase() == "e" &&
+                kbInfo.event.altKey) {
+                // Export per-face inset prisms as OpenSCAD; copy to clipboard.
+                let scad = "";
+                theOrigami.faces.forEach((_, i) => {
+                    const r = theOrigami.getInsetPolyhedron(i, theOrigami.medial, theOrigami.insetDepth);
+                    scad += `// Face ${i}\n`;
+                    scad += `polyhedron(\n`;
+                    scad += `  points = ${JSON.stringify(r.pt)},\n`;
+                    scad += `  faces = ${JSON.stringify(r.idx)}\n`;
+                    scad += `);\n\n`;
+                });
+                navigator.clipboard.writeText(scad);
+                console.log("SCAD output copied to clipboard");
             }
         });
 

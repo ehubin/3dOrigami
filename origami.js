@@ -20,7 +20,6 @@ class Origami {
     faces=null;
     flatPos=[];
     flatQuat=[];
-    vDir=[];
     name="";
     planMode=false;
     faceMeshes=[];
@@ -478,7 +477,6 @@ class Origami {
     }
     delPt(vIdx) {
         this.points.splice(vIdx,1);
-        if (this.vDir.length>0) this.splice(vIdx,1);
         for(const f of this.faces) {
             for(let i=0;i<f.length;++i) if(f[i]>vIdx) --f[i];
         }
@@ -529,8 +527,10 @@ class Origami {
         } else {
             let sc=newDim/curDim;
             this.points.forEach(p=>{p[0]*=sc;p[1]*=sc;p[2]*=sc});
+            // Vertices changed -> medial axis cache is stale; recompute
+            // before rebuilding face meshes.
+            this.refreshMedial();
             this.unselectFace(scene);
-            this.face
             this.faces.forEach((f,idx)=>{
                 this.faceMeshes[idx].dispose();
                 this.createFaceMesh(f,idx,scene);
@@ -593,53 +593,7 @@ class Origami {
             this.createFaceMesh(f, idx, scene);
         });
     }
-    getFlatCoords() {
-        res=[];
-        this.faces.foreach((f,i)=>{
-
-        });
-        return res;
-    }
     getFace(fmesh) { return this.faces[this.faceMeshes.indexOf(fmesh)];}
-    writeToClip(scene) {
-        this.computeVDir();
-        if (this.vDir.length != this.points.length) return;
-
-        let wm=null,me=null,next=null,prev=null,n2=null,n3=null;
-        let f2d="f2d= [ ",n2d="n2d= [ ",n3d="n3d= [ ",gnd=" gnd= [ ";
-        this.faces.forEach((f,i)=>{
-            //if(i==0) {
-            wm=this.faceMeshes[i].getWorldMatrix(true);
-            //c=this.getCenter(f);
-            f2d+="[ ";
-            n2d+="[ ";
-            f.forEach((p,j)=>{
-                //if(j==0) {
-                next=this.points[f[j==f.length-1?0:j+1]];
-                prev=this.points[f[j==0?f.length-1:j-1]];
-                n2=global(vadd(this.points[p],vnormalize(vadd(
-                        vsub(next,this.points[p]),
-                        vsub(prev,this.points[p])))),wm);
-                me=global(this.points[p],wm);
-                //console.log("-->>"+p3);
-                n3=global(vadd(this.points[p],this.vDir[p]),wm);
-                f2d+="["+me.x+", 0, "+me.z+"]"+(j==f.length-1 ?"":",");
-                n2d+="["+n2.x+", 0, "+n2.z+"]"+(j==f.length-1 ?"":",");
-                BABYLON.Mesh.CreateSphere("n2"+i, 10, SphD, scene,true).position=me;
-                BABYLON.Mesh.CreateSphere("me"+i, 10, SphD, scene,true).position=n3;
-                BABYLON.MeshBuilder.CreateLines("gl1",{points:[me,n3]}).color=new BABYLON.Color3(1,0,0);
-            //}
-            });
-            f2d+="]"+(i==this.faces.length-1 ?"":",");
-            n2d+="]"+(i==this.faces.length-1 ?"":",");
-            //}
-        });
-        f2d+="]";
-        n2d+="]";
-        console.log(f2d);
-        console.log(n2d);
-
-    }
     getPoints(fi) {
         let f=this.faces[fi];
         return f.map(pi=>this.points[pi]);
@@ -805,78 +759,6 @@ class Origami {
         }
 
         return { pt, idx };
-    }
-
-    getScadPolyhedron(fi,medial) {
-        let res={pt:[],idx:[]},f=this.faces[fi];
-        res.pt=res.pt.concat(this.getPoints(fi));
-        res.idx.push([0,1,2,3,4,5,6,7,8,9,10].splice(0,this.faces[fi].length));
-        f.forEach((p1,pi1)=>{
-            let pi2=pi1==f.length-1?0:pi1+1,pi0=pi1==0?f.length-1:pi1-1;
-            let fprev=this.findVOtherFaceContaining(f[pi0],f[pi1],fi);
-            let im1=medial.getPt(p1,fi,fprev[0]);
-            res.pt=res.pt.concat(im1);
-            for(let i=0;i<im1.length-1;++i) res.idx.push([pi1,res.pt.length-(i+2),res.pt.length-(i+1)]);
-            res.idx.push([res.pt.length-1,pi2==0?this.faces[fi].length:res.pt.length,pi2,pi1]);
-        });
-        let supi=[];
-        for(let i=res.pt.length-1;i>this.faces[fi].length-1;--i) supi.push(i);
-        res.idx.push(supi);
-        console.log(res);
-        return res;
-    }
-    getBabylonPolyhedron(fi,medial) {
-
-    }
-    computeVDir() {
-        let first,prev,next,fi;
-        try {
-            this.points.forEach((p,pidx)=>{
-                let vList=[];
-                console.log("v="+pidx);
-                // find nearby vertex to p
-                this.faces.some((f,fidx)=>{
-                    return f.some((lp,pi)=>{
-                        if(lp==pidx) {
-                            fi=fidx;
-                            prev=pi==0?f[f.length-1]:f[pi-1];
-                            next=pi==f.length-1 ? f[0]:f[pi+1];
-                            vList.push(prev);
-                            console.log("face"+f+",prev="+prev+",next="+next);
-                            return true; 
-                        }
-                        return false;
-                    });
-                });
-                first=prev;
-                let ret=[fi,next];
-                do {
-                    vList.push(ret[1]);
-                    ret = this.findVOtherFaceContaining(pidx,ret[1],ret[0]);
-                    if(ret==null) {
-                        console.log("Polygon not closed... exiting computeVGlob!");
-                        return;
-                    }
-                    console.log("next="+ret[1]+"; face="+ret[0]);
-
-                } while(ret[1] != first)
-                this.vDir.push(
-                    _computeVDir(p,
-                        this.points[vList[0]],
-                        this.points[vList[1]],
-                        this.points[vList[2]],
-                        this.points[vList[vList.length==3?0:3]]
-                    ,true,pidx==5));
-                
-                showSph(p,BABYLON.Color3.Gray());
-                showSph(vadd(p,this.vDir[pidx]),BABYLON.Color3.Red());
-                showSph(vadd(p,smult(-1,this.vDir[pidx])),BABYLON.Color3.Green());        
-            });
-        } catch(e) {console.log(e); this.vDir=[];}
-        this.faces.forEach((f,idx)=>{
-            this.faceMeshes[idx].dispose();
-            this.createFaceMesh(f,idx,scene);
-        });
     }
 
     computeFdir(f,fidx,ep) {
