@@ -1,0 +1,1176 @@
+
+
+===== PAGE 1 / 12 =====
+
+Accurate Computation of the Medial Axis of a Polyhedron* 
+Tim Culver John Keyser Dinesh Manocha 
+Department of Computer Science 
+University of North Carolina 
+Chapel Hill, NC 27599-3 175 
+{culver,keyser,dm} @cs.unc.edu 
+http://www.cs.unc.edul-geom/MAT 
+Abstract 
+We present an accurate and efficient algorithm to compute the in- 
+ternal Voronoi region and medial axis of a 3-D polyhedron. It uses 
+exact arithmetic and representations for accurate computation of 
+the medial axis. The sheets, seams, and junctions of the medial 
+axis are represented as trimmed quadric surfaces, algebraic space 
+curves, and points with algebraic coordinates, respectively. The al- 
+gorithm works by recursively finding neighboring junctions along 
+the seam curves. It uses spatial decomposition and linear program- 
+ming to speed up the search step. We also present a new algorithm 
+for analysis of the topology of an algebraic plane curve, which is 
+the core of our medial axis algorithm. To speed up the compu- 
+tation, we have designed specialized algorithms for fast computa- 
+tion on implicit geometric structures. These include lazy evaluation 
+based on multivariate Stiirm sequences, fast resultant computation, 
+curve topology analysis, and floating-point filters. The algorithm 
+has been implemented and we highlight its performance on a num- 
+ber of examples. 
+1 Introduction 
+The medial axis of a solid object provides useful shape information 
+in terms of geometric proximity of its boundary elements. It is a 
+skeletal representation that can be formulated as the locus of the 
+center of a maximal sphere as it rolls around the object interior. 
+The medial axis of an object was first proposed by Blum [5] for 
+biological shape measurement. It has also been used for a num- 
+ber of other applications, including path planning, finite element 
+mesh generation, automated injection molding simulation and fea- 
+ture recognition. Many researchers have proposed the medial axis 
+transform as an alternate representation to B-rep and CSG in a de- 
+sign and interrogation system [25,42,46]. 
+The medial axis of a solid is the closure of the locus of all points 
+within the solid that have two or more closest points on the bound- 
+ary of the solid. When the solid is a polyhedron, the medial axis 
+is composed of bisectors of boundary features (vertices, edges, and 
+faces). These bisectors are planes and quadric surfaces. The medial 
+axis consists of sheets, seams, andjunctions. A sheet is the bisector 
+*Supported in part by an Alfred P. Sloan Foundation Fellowship, 
+AR0 Contract DAAHO496-I-0257, NSF Career Award CCR-9625217, 
+ONR Young Investigator Award (N00014-97-l-0631), Honda, Intel and 
+NSF/ARPA Center for Computer Graphics and Scientific Visualization 
+Pcm)jssion 10 tnakl: digital or hard copies 01‘all or part Ol‘thiS WN’!~ tbl 
+personal or classroom use is granted without fee provided that wpics 
+are not made or distri\>uted for profit or commercial a&mtage and that 
+cq)ies hear lhis notice ad the l’uli citation on the first page. TO COpY 
+othcr\visc, to republish, to post on servers 01’ to rcdistrihutc I(, lists. 
+rcqu,rcs prior specific permission andior 3 fee 
+Fifth Symposium on Solid Modcling Ann Arbor Ml 
+Copyright ACM 1999 I-58 I I3-080-5/99/06...$5.00 
+of two boundary elements, and may be represented as a trimmed 
+quadric surface. A seam is an algebraic space curve defined by the 
+intersection of two or more sheets. A junction point is defined by 
+the intersection of three or more sheets. 
+The complexity of the medial axis is not fully understood at the 
+moment. The total number of sheets, seams, and junctions is, in the 
+worst case, R(n’), where n is the total number of faces, edges, and 
+vertices in the polyhedron. The current upper bound is O(n3+‘) 
+for any positive E. Many polyhedral medial axis algorithms use ei- 
+ther a spatial subdivision or some form of discrete representation 
+of the surface. Sheehy et al. [40] assert that because of the inher- 
+ent complexity of a continuous approach, one has to use some form 
+of discretization. However, it is hard to accurately and efficiently 
+compute the medial axis based on such a discrete representation. In 
+the last few years, a number of authors have proposed computing 
+the medial axis based on a tracing approach [ll, 35, 411. Starting 
+with a known junction (for instance, a vertex of the polyhedron), 
+they trace along its incident seams and discover the adjacent junc- 
+tion points. In particular, Sherbrooke et al. [41] have presented the 
+first implemented algorithm for computing the medial axis based 
+on a continuous representation of the boundary. However, they 
+compute numerical solutions of polynomial equations using float- 
+ing point arithmetic, and compute piecewise linear approximation 
+of the seam curves. The accuracy varies with the step size and the 
+tolerances used for computing the junction points. Since the medial 
+axis of a polyhedron can be very sensitive to perturbations, it can 
+be rather difficult to design an accurate algorithm using finite preci- 
+sion arithmetic. For example, figure 14 shows the medial axis of a 
+polyhedron which has four junction points very close to each other. 
+In practice, it is difficult to accurately compute the medial axis of 
+such a polyhedron using finite precision arithmetic. 
+The problem of accurate and robust computation using finite 
+precision arithmetic is a major open problem in sblid modeling 
+[26]. One solution to the precision problem is to use exact arith- 
+metic. For example, many algorithms based on exact arithmetic 
+have been proposed for reliable computation for boundary evalua- 
+tion of boolean combinations of polyhedral models [4,20,26,43]. 
+However, medial axis computation involves low-degree nonlinear 
+algebraic curves and surfaces. For such problems, it is difficult 
+to compute tight bounds on the numerical error generated due to 
+floating-point arithmetic. As a result, it is hard to design reliable 
+algorithms using tolerance-based approaches. At the same time, 
+progress is slow in the application of exact arithmetic to compute 
+with nonlinear geometric structures, mainly because exact arith- 
+metic is perceived to be impractically slow. 
+In this paper, we present an accurate and efficient algorithm to 
+compute the internal Voronoi region and medial axis of a 3-D poly- 
+hedron. Our overall approach is similar to the 3-D tracing algorithm 
+proposed by [35, 11, 411. However, we use exact arithmetic and 
+representation for accurate computation of the medial axis. The al- 
+gorithm recursively computes the vertices and edges of the medial 
+179 
+
+
+===== PAGE 2 / 12 =====
+
+axis based on seam-tracing. We also present a new curve topology 
+evaluation algorithm for reliable tracing of the seams of the medial 
+axis. Our contributions include: 
+Search algorithm: An accurate and reliable algorithm for 
+evaluating all the seams and computing the “first” junction 
+point lying on the seam. 
+Geometric representations: Efficient and exact representa- 
+tions of junction points, seams and sheets of the ms:dial axis. 
+Improved efficiency: We use techniques based on spatial de- 
+composition and linear programming to speed up the search 
+step and avoid enumerating all possible combinations of junc- 
+tion points. To speed up arithmetic operations on algebraic 
+numbers, we have designed specialized algorithms for fast 
+evaluation and computation of the junction points, seams and 
+sheets. These include lazy evaluation based on multivariate 
+Sti.lrm sequences, fast resultant computations, curv: topology 
+evaluation, and floating-point filters. 
+Handling Degeneracies: We identify the cases where degen- 
+eracies can affect our algorithm, and propose ways to identify 
+and resolve them. 
+The resulting algorithm has been implemented and we highlight its 
+performance on some example polyhedra. Its overall complexity 
+is output sensitive and depends on the combinatorial complexity of 
+the medial axis. 
+Organization: The rest of the paper is organized in the follow- 
+ing manner. We survey the previous work in medial axis computa- 
+tion and exact arithmetic in section 2. Section 3 gives an overview 
+of our algorithm and describes the exact representations Iof the ele- 
+ments of the medial axis. In section 4, we describe our new search 
+and curve topology analysis algorithms. We present a number of 
+techniques to improve the efficiency of our approach in section 5. 
+Section 6 discusses degeneracies in the medial axis computation 
+and how we handle them. We describe our implementation in Sec- 
+tion 7 and highlight its plsrformance on a few polyhedra. 
+2 Previous work 
+2.1 Medial axis computation 
+There is considerable work on medial axis computation in solid 
+modeling and computational geometry. The various approaches can 
+be classified into two main categories: discrete methods based on 
+sampling, and continuous methods that do not rely on the suffi- 
+ciency of some sampling. 
+Sampling points on tlhe surface: Many authors have computed 
+the medial axis using the Voronoi diagram of a set of points located 
+on the polyhedron’s surface. Usually the result is an approximation 
+to the medial axis, though Sheehy et. al. [4.0] adaptively :refine the 
+sampling until all adjacency relationships are revealed. From this, 
+the exact medial axis may be constructed. However, the overall 
+complexity of this approach is not well understood. 
+Spatial Subdivision: Another popular approach is to impose a 
+regular grid on space, and compute an approximation to the medial 
+axis consisting of a set of cells. The approximation can b’e consid- 
+ered an “image” of the medial axis, and does not contain a ‘complete 
+description of the adjacenlcy relationships. Among implementations 
+of this approach, that of Vleugels and Overmars 1451 is notable in 
+that they guarantee correct topology of the approximate axis. Their 
+topology-resolution routine subdivides adaptively. Thus, like the 
+boundary-discretization method, the complexity is difficult to for- 
+mulate in terms of the input size. Hoff et. al. [27] compute an ap- 
+proximate Voronoi diagram using graphics hardware. Their method 
+is very efficient, scales well to large models, and can be used as a 
+heuristic preprocess to speed up an exact method such as the one 
+presented here. 
+2-D Continuous Algorithms: The classic divide-and-conquer 
+algorithm for the two-dimensional problem has been presented b,y 
+Lee [33]. Fortune has presented a sweepline algorithm 11211. No 
+algorithms are known in the literature that extend these approaches 
+to 3-D. lmai has presented an incremental algorithm for 2-D poly- 
+gons [28]. Held describes wavefront-propagation algorithms for 
+2-D polygons [24] and for convex 3-D polyhedra [23]. 
+Incremental 3-D Algorithm: Milenkovic has presented an an 
+incremental algorithm for computing the Voronoi region of a poly- 
+hedron [35]. It inserts the boundary elements one at a time. At step 
+k, the entire generalized Voronoi diagram of the first k sites has 
+been constructed. However, we are not aware of any implementa; 
+tion of this algorithm. 
+3-D Tracing Algorithms: All the practical algorithms for com- 
+puting the 3-D medial axis are based on the tracing approach. Start- 
+ing from a junction point, a seam emanating from the junction is 
+followed. The seam terminates at another junction. Once this point 
+is found, the algorithm recursively forks and follows all seams em- 
+anating from that junction. The key step is the search for the seam 
+terminator. In the two-dimensional medial axis problem, the search 
+is limited to smaller and smaller subchains of the polygon. No such 
+property holds for the three-dimensional problem; each terminating 
+junction is found at the expense of a search of (in the worst case) the 
+entire polyhedron. Thus the complexity is proportional to both the 
+input size n of the polyhedron and the output size m of the medial 
+axis. The algorithm’s worst-case behavior is necessarily at least a 
+factor of n larger than optimal O(m) time. A tight upper bound on 
+m, the size of the medial axis, is currently not known. It is known 
+that m = O(n 3+e) for any E > 0 [2], but we know of no example 
+where m is more than O(n’). 
+Milenkovic [35] proposed the 3-D tracing algorithm, and dis- 
+cusses its complexity. Chiang [1 I] presented an algorithm for corn.- 
+puting the medial axis of a planar region bounded by piecewise C’! 
+curves. It involves tracing branches using sets of polynomial equa- 
+tions. Sherbrooke, Patrikalakis and Brisson [41] have presented a 
+variation on the algorithm. They explicitly trace along the seam, 
+creating a piecewise-linear approximation to the curve. They ap 
+plied their algorithm to generate the medial axis of a numb’er of 
+polyhedra. Reddy and Turkiyyah [38] also present a version of 
+the tracing algorithm, and compare it to an algorithm based on the: 
+Voronoi diagram of a set of points on the boundary. 
+Medial Axis of CSG Objects: Dutta and Hoffmann [17, 181 
+and Hoffmann [25] have presented algorithms for computing the 
+medial axis of CSG objects. Their algorithms compute the paints 
+of closest approach between pairs of boundary elements. They have 
+also studied exact representation of bisectors arising in medial axis 
+computation of CSG objects bounded by planes, quadrics and torii. 
+Medial axis to B-rep Conversion: A number of algoriihms 
+have been presented in the literature to convert solids from a rep- 
+resentation based on the medial axis to a boundary representation 
+[6, 11,44,46]. 
+2.2 Exact arithmetic in geometric computation 
+Exact arithmetic has proven useful in the linear domain. Exact 
+arithmetic means that each number is determined and stored to 
+whatever precision is necessary. By allowing arbitrary bit lengths 
+any rational number can be computed and stored exactly. For lin- 
+ear objects, rational numbers are usually all that is required to per- 
+form a geometric operation. In the solid modeling community, ex- 
+act arithmetic has been used successfully for applications involving 
+linear objects (e.g. [20]). Some of the recently developed geomet- 
+ric libraries like LEDA and CGAL also provide support for e.xact 
+180 
+
+===== PAGE 3 / 12 =====
+
+arithmetic. 
+In the nonlinear domain, however, exact arithmetic becomes 
+more difficult to apply effectively. This is because computations on 
+non-linear objects often require algebraic numbers, which cannot 
+be explicitly represented by a finite number of bits. Techniques us- 
+ing bit-length estimates may, in the worst case, require bit lengths 
+which are exponential with respect to the degree of the algebraic 
+functions [ 10,471. One approach to this problem is to use field ex- 
+tensions to allow representations of each new number as it is com- 
+puted. Many computer algebra systems and symbolic libraries pro- 
+vide support for field extensions. However, computing with such 
+numbers can be quite expensive. Another approach is to represent 
+an algebraic number as the unique root of a polynomial (with ra- 
+tional coefficients) within a rational interval. This is similar to the 
+idea of interval arithmetic. As long as the interval containing the 
+root can be tightened or cut on demand, many useful queries can 
+be performed exactly using this representation. In one dimension, 
+this can be accomplished through the use of Stiirm sequences. In 
+higher dimensions, multivariate Stiirm sequences are used. Milne 
+[36] and Pedersen [37] have proposed methods for such computa- 
+tions. Keyser et. al. apply these methods to curve intersection prob- 
+lems in 2-D [31] and to the problem of CSG boundary evaluation 
+[30]. The authors demonstrate that the geometric operations for the 
+CSG problem can be computed in rational surfaces using only I-D 
+and 2-D St&m sequences. The medial axis problem, in contrast, 
+requires the use of either 3-D Stiirm sequences or field extensions. 
+3 Algorithm Overview 
+Our approach builds on the tracing algorithm proposed by [35], 
+[41], and [38]. However, instead of computing a piecewise linear 
+approximation, we exactly compute all the components of the me- 
+dial axis. Essentially, the algorithm constructs the adjacency graph 
+of the medial axis while traversing it. Our terminology is similar to 
+that of [41]. 
+The input polyhedron consists of faces, edges, and vertices. The 
+coordinates of the vertices are represented in terms of rational num- 
+bers. The faces, edges, and vertices are collectively called bound- 
+ary elements. The medial axis consists of sheets, seams, and junc- 
+tions. The sheets correspond to trimmed quadric surfaces. The 
+seams are algebraic curves with rational coefficients and the junc- 
+tions are points whose coordinates correspond to algebraic numbers 
+(of degree at most 8). A sheet is said to be governed by two bound- 
+ary elements, a seam by three (or more), and a junction by four (or 
+more). We denote the squared distance function associated with a 
+point, line, or plane by c&z, y, z), where e stands for the point, 
+line, or plane. The squared distance function is a quadratic formula 
+in x, y, and z. 
+The algorithm starts by finding a single seam. For example, if 
+there is a vertex of the polyhedron with three incident edges, all of 
+which are convex, then its three incident faces generate a seam. If 
+no vertex of the polyhedron is trivalent, a more sophisticated tech- 
+nique is used to get the algorithm off the ground with an initial 
+seam. This is discussed in section 6.1. 
+Each remaining boundary element e in the polyhedron is then 
+considered as a potential quadruple (el, e2, es, e) generating a 
+junction point on the seam. One seeks the element e4 whose can- 
+didate junction p1 comes first along the seam, measured by arc 
+length. The ingredients of the search are 
+0 the seam governors el, e2, es; 
+l the starting point PO, a junction point governed by, say, 
+(eo,el,e2,e3); 
+l the search direction w, one of the two tangent directions at 
+PO. 
+The determination of e4 and p1 is based, not on taking tiny steps 
+along the seam, but on an accurate topological analysis of the curve. 
+The newly-found junction point may be a vertex of the polyhe- 
+dron. In this case, the branch of computation finishes, and an un- 
+searched seam is taken from a priority queue. Otherwise, the junc- 
+tion point is equidistant from (ignoring degeneracies for now) four 
+boundary elements (el, e2, es, e4). Assuming the junction point 
+has not already been visited, three new seams are inserted in the 
+priority queue: those corresponding to (e2, es, e4), (el, es, e4), and 
+(el, e2, e4). When the priority queue is empty, the algorithm termi- 
+nates. 
+For each new seam, the search direction is decided by compar- 
+ing the curve tangent to the three bisector surfaces involving the 
+discarded element. The correct tangent direction lies on the non- 
+discarded side of each of these three surfaces. The medial axis 
+transform of an object consists of its medial axis together with a 
+radius function, which assigns to each point on the axis the radius 
+of the maximal ball at that point. The radius function is constructed 
+by composing the parametric form of a sheet, quadratic in s and t, 
+with the distance function to either of its governors, a quadratic in 
+x, y, and z. The radius function is in general a degree-four expres- 
+sion in s and t. 
+3.1 Exact Arithmetic 
+We assume that the boundary of the polyhedron can be represented 
+using rational numbers. However, there is a fundamental limitation 
+to the use of exact rational arithmetic in Euclidean geometry: con- 
+structions on rational numbers often result in algebraic numbers. 
+For an example in the plane, consider the set of points equidis- 
+tant from the line y = 0 and the line y = x: the “bisector” of 
+these two lines is the union of the lines y = (-1 + fi)z and 
+y = (-1 - &)x. Evidently, these lines cannot be described us- 
+ing only rational numbers. Their equations have algebraic numbers 
+of degree 2, and writing them in “two-point form” does not avoid 
+the difficulty, since the origin is the only point on either line with 
+rational x and y coordinates. 
+Exact arithmetic with these numbers is possible by computing in 
+an extended field. In the example above, this amounts to represent- 
+ing all numbers as a + bfi, where a and b are rational. However, 
+computing in an extended field is significantly more expensive than 
+computing over the rationals, especially when the field extension 
+grows over the computation. 
+As an experiment, we implemented the two-dimensional ana- 
+logue of our three-dimensional medial axis algorithm in Mathemat- 
+ica, using that system’s facility for algebraic numbers. The algo- 
+rithm encounters only numbers of algebraic degree four or less, 
+which can always be expressed by radicals. Mathematics represents 
+these as symbolic expressions with radicals (no RootOf [ 1 objects 
+are necessary). Figure 1 shows the medial axis of a hexagon formed 
+by taking the regular hexagon with vertices on the unit circle, and 
+Magnified 1015 times 
+Figure 1: The medial axis of a near-regular hexagon. The central 
+region is highly magnified to reveal its combinatorial structure. 
+181 
+
+===== PAGE 4 / 12 =====
+
+perturbing its vertices by rounding to rational numbers, commit- 
+ting an absolute error l’ess than 10Vm. Notice that the perturbed 
+hexagon still has a degenerate medial axis. 
+We have chosen to avoid arithmetic: involving such algebraic 
+numbers, choosing instead to design im.plicit geometric structures 
+for those objects which cannot be described with rati~onal num- 
+bers, and using only rational arithmetic. In the example above, we 
+would represent the pair of lines together as the degenerate conic 
+-x2 + 22~ + y2 = 0. The choice not to separate the two lines (for 
+usually only one is relevant) will complicate our algorithms some- 
+what. The expense of dealing with a degree-2 representation for 
+a degree-l object is analogous to the expense of dealing with the 
+quadratic field extension. 
+A seam curve lies on three different sheets; it is represetrted as 
+the intersection of any two. An explicit rational parameterization 
+of these curves is, in general, impossible; thus they are represented 
+in implicit form only. The implicit form G(s, t) = 0 is obtained 
+by substituting the parametric form of one surface into the imlplicit 
+form of the other. If none of the surfaces has a rational paramet- 
+ric form with rational coefficients, an implicit form is obtaiaed by 
+projecting the curve onto a plane (see section 4.2.3). Computations 
+involving the curve are usually formulated in the (s, t) plane. 
+A junction is an algebraic point, represented jointly by 
+l a system of three algebraic equations in three variables with 
+rational coefficients; 
+3.2 Exact geometric representations 
+l a three-dimensional box with rational coordinates containing 
+exactly one root of the system. 
+This section describes our exact representations for the sheets, 
+seams, and junctions of the medial axis. The parts are illustrated 
+in figure 2. 
+A sheet is the bisectlor of two boundary elements. ‘These are 
+quadric surfaces, amenable to two different representations: an im- 
+plicit form 
+F(G Y, 2) = 0 
+where F is a polynomial of total degree 2, and a rational parametric 
+form 
+XC% t) Y(s, t) as, t) -- - - 
+W(s., t) ’ W(s, t) ’ W(s, t) > 
+An implementation of trivariate Stttrm sequences in exact arith.. 
+metic can find a box with a single root, and refine its size arbitrarily. 
+(More details on multivariate Sttirm sequences are given in [36].:1 
+Reasoning about the point typically involves reasoning about the 
+box, while shrinking the box until a query can be answered umm-, 
+biguously. A vertex-junction is equidistant from all of its incident. 
+edges and faces, and its coordinates are known exactly, so there is. 
+no need to associate any of the above structure with such a junction. 
+4 The searching algorithm 
+where X, Y, 2, and W each are polynomials of total degree 2. The 
+implicit form is just the difference of two distance functions, and 
+has rational coefficients. The parametric form, however, :may have 
+irrational coefficients, depending on the two governors and their 
+configuration. Our medial axis algorithm always uses the implicit 
+form, and also uses the parametric form whenever its coefficients 
+are rational. 
+In this section, we enumerate all possible morphologies for bisec- 
+tor surfaces and seam curves based on all combinations of gover- 
+nors. Based on this classification, three distinct seam-search algo- 
+rithms are presented. Each is suited to a different configuration, 
+and they may be thought of roughly as evaluation of curves in one- 
+dimensional, a two-dimensional, and a three-dimensional space. 
+The parametric form i.s computed directly from the governors. 
+For instance, the bisector of two skew lines can be parametrized 
+by letting s run along one line and t along the other. The point 
+at the intersection of the normal plane at s, the normal plane at 
+t, and the bisector plane of s and t lies on the bisector surface. 
+When s and t are rational, the point on the bisector is rational. This 
+plane-intersection technique, presented for rational curves in space 
+in [19], worlcs for other bisector types as well. It cannot work, 
+however, for the generic line-plane and plane-plane bisectors, since 
+they are largely devoid of rational points. 
+Internal 
+Junction 
+Figure 2: The geometric elements of the medial axis 
+4.1 Bisector morphology 
+In figure 3, we show all of the bisectors that arise in the medial axis 
+of a polyhedron. Note that some of the non-generic configurations 
+arise in perfectly generic polyhedra. For instance, the bisector of a 
+plane and a line in the plane occurs between the Voronoi region of a 
+face and that of an adjacent edge. The last column indicates whether 
+the coefficients of the parametric form of the surface are rational 
+numbers (the implicit form always has rational coefficients). 
+Our medial axis algorithm uses exact representations of the bi- 
+sector surfaces. An implicit form with rational coefficients is al- 
+ways available, but in the indicated cases, the parametric form may 
+involve square roots. The consequences of this for our algorithm are 
+discussed in section 4.2. In the output, these surfaces can be given 
+in parametric form with algebraic coefficients of the form a + It& 
+for rational a, b, c, or they can be approximated-by parametric sur- 
+faces of the same geometric type with rational or floating-point co- 
+efficients with bounded error. 
+4.2 Seam morphology 
+The ten combinations of boundary elements are listed in figure 4, 
+with the most general seam curve type for each combination. The 
+analysis method (third column) corresponds to a choice of three al- 
+gorithms, described in sections 4.2.1-4.2.3 below. A more detailed 
+exposition of seam morphology may be found in [ 131. 
+4.2.1 Rational Parametric Curves 
+Sorting points along a rational parametric curve is a one- 
+dimensional problem. Each candidate junction is represented as 
+
+===== PAGE 5 / 12 =====
+
+Governors Configuration Bisector Coeffs in Q ? 
+Point-point Generic Plane Yes 
+Point-line Generic Parabolic cylinder (z = 2”) Yes 
+Incident Plane Yes 
+Point-plane Generic Paraboloid (z = xL + y”) Yes 
+Incident Line Yes 
+Line-line Generic Saddle surface (z = xL - y’) Yes 
+Incident Orthogonal plane pair (z’ + z2 = 0) No 
+Parallel Plane Yes 
+Line-plane Generic Right circular cone (zL = x2 + yL) No 
+Perpendicular Right circular cone Yes 
+Parallel Parabolic cylinder Yes 
+Line lies on plane Plane Yes 
+Plane-plane Generic Orthogonal plane pair No 
+Parallel Plane Yes 
+Perpendicular Orthogonal plane pair Yes 
+Figure 3: The bisectors that arise in the medial axis. 
+an algebraic number, in implicit form (a polynomial and a rational 
+interval containing exactly one root). 
+The coefficients of this parametric form may not be rational. In 
+these cases, it is feasible to perform the computation in an exten- 
+sion field of the rationals, but we find it more efficient to ignore the 
+parametric form, using only the implicit form of the curve. 
+4.2.2 Non-rational Curves lying on Rational Surfaces 
+In many cases, we are unable to compute a rational parametrization 
+of the curve with rational coordinates. However, we sometimes 
+have a parametrization in rational numbers of a surface that con- 
+tains the curve. In such cases, we form an implicit representation 
+of the algebraic curve in the parametric domain of that surface. 
+In the cases represented by the first eight rows of 4, at least one 
+of the three bisector surfaces admits a rational parametrization with 
+rational coefficients. We use that parametric representation to eval- 
+uate the seam curve. Using the parametric form of the surface, we 
+project the curve back to the (s, t) plane. The topological analy- 
+sis algorithm (described in section 4.4) decomposes the curve into 
+monotonic segments. For each candidate boundary element, we 
+choose the bisector surface associated with one of the seam gover- 
+nors. The intersection curve with S is pulled back to the same (s, t) 
+domain. Intersections of the seam curve with the candidate-curves 
+in (s, t)-space correspond to potential junction points. Each poten- 
+tial junction point is located in one of the monotonic boxes. It is 
+then a simple matter to order the candidate junctions and find the 
+first one along the seam curve. 
+Governors 1 Generic seam 1 Analvsis method 
+Point-point-point Line ‘4.2.1 
+Point-point-line Parabola 4.2.1 
+Point-point-plane conic 4.2.1 
+Point-line-line Quartic 4.2.2 
+Point-line-plane Quartic 4.2.2 
+Point-plane-plane Conic 4.2.2 
+Line-line-line Quartic 4.2.2 
+Line-line-plane Quartic 4.2.2 
+Line-plane-plane conic 4.2.3 
+Plane-plane-plane Line 4.2.3 
+Figure 4: Some curves that arise as seams in the medial axis. 
+4.2.3 Non-rational Curves lying on Algebraic Surfaces 
+In the last two seam combinations, line-plane-plane and plane- 
+plane-plane, the bisector surfaces (cones and plane-pairs) may not 
+have rational parametric forms with rational coefficients. Rather 
+than performing arithmetic in an extension field, we note that in 
+these two cases (including degenerate configurations) the seam 
+curve is always a conic or a line, and elect to treat these cases 
+with specialized three-dimensional methods. The candidate junc- 
+tions are all isolated in (2, y, z)-space using tri-dimensional Stiirm 
+sequences. 
+For the generic plane-plane-plane case, the equidistant point set 
+corresponds to four lines meeting at the intersection of the planes. 
+The various slopes of these lines are all, in general, irrational. The 
+seam is contained in one of the eight “branches” of this curve, and 
+the plane equations of the three governors distinguish points on this 
+branch from points on the others. The ordering among the candidate 
+junctions is determined by, say, their x-coordinates. 
+For the generic line-plane-plane case, the curve consists of two 
+non-intersecting tonics lying in perpendicular planes; the planes’ 
+various slopes are generally irrational. One conic is the seam, while 
+the other is irrelevant. Candidate junctions on the irrelevant conic 
+can be culled away by testing against the plane equations of the two 
+governing planes. The curve, represented implicitly by the inter- 
+section of two bisector surfaces f(z, y, z) = 0, g(x, y, z) = 0, is 
+then projected onto the zy-plane by eliminating z from the pair of 
+surface equations using the standard Sylvester resultant [14]. Be- 
+fore projecting, we transform the system so that eliminating z cor- 
+responds to projection onto a plane close to the plane in which the 
+conic lies. The projected curve is a quartic in x and y. It is the prod- 
+uct of two tonics, but cannot be factored over the rationals. A suit- 
+able domain is chosen and the curve topology routine is run on the 
+quartic curve. The boxes containing the candidate junctions project 
+to hexagons. If the projections overlap, the points are shrunk in 3-D 
+and reprojected. Figure 5 shows an example where the seam is an 
+ellipse lying in an irrational plane. Not shown, and not part of the 
+seam, is a hyperbola in a plane perpendicular to the ellipse’s plane; 
+under projection to a rational plane, the hyperbola will appear. 
+4.3 Local geometry at Junction Points 
+This section addresses the issue of determining the seams that are 
+incident to a junction. Consider a junction governed by elements 
+{el,..., ek} where k 2 4. In the simplest case, k = 4 and each 
+of the three-element subsets of {el , ez, ea, ed} govern a seam. One 
+problem is the choice of one of the two tangent directions along the 
+183 
+
+===== PAGE 6 / 12 =====
+
+/ 
+/ 
+-----::. 
+_’ 
+_:’ 
+,:’ 
+_:’ 
+,... 
+-. I’ 
+-. 
+‘-. 
+< -> 
+<* 
+, 
+!’ ,:. 
+,/’ ,:’ 
+I ,:’ 
+\ 
+_:’ 
+,:’ 
+_:’ 
+Figure 5: An elliptical seam in a plane with irrational slope 
+seam. Another problem is that when k > 4, not all three-element 
+subsets actually govern seams, and the non-redundant triples must 
+be identified. These two problems are solved by comparing seam 
+tangent vectors with bisector tangent planes. 
+Junction points can be seen to fall into two categories: internal 
+junctions and vertex-junctions. An internal junction q is character- 
+ized by: 
+l q is equidistant from four or more boundary elements; 
+l this distance is positive, and q lies in the interior of the poly- 
+hedron; 
+l q being equidistant from five or more boundary eb:ments is 
+indicative of a truly degenerate situation; 
+l the coordinates of q are algebraic numbers of degree at most 
+eight. 
+A vertex-junction v is characterized by: 
+l v coincides with a vertex of the polyhedron; 
+l v is equidistant from several boundary elements, but this dis- 
+tance is zero; 
+l the number of equi’distant boundary elements is quite com- 
+monly more than four, as it includes all incident faces and 
+(reflex) edges; 
+l the coordinates of v are rational by assumption. 
+It is clearly advantageous to distinguish these two types of junc- 
+tion point in the implementation. It can be argued (see [41]) that the 
+connectivity properties of the medial axis make it feasible to avoid 
+searching out of vertex-junctions at all-they serve as “sinks” for 
+the recursion. Doing so typically removes many degenerate junc- 
+tions from consideration. However, the problem of degenerate in- 
+terior junctions remains. Degenerate interior junctions are not rare; 
+they arise naturally in mo’dels of artificial objects possessing sym- 
+metry. 
+For any type of junction-interior, vertex, degeneralte, non- 
+degenerate-the following predicate decides whether a potential 
+incident seam is a part of the medial axis. Let E be a subset of 
+the set of junction govemors, and E’ be its complement, so that 
+EUE’ = {Q,..., ek}. Let E have at least three elements. For 
+each pair (e, e’) where c E E and e’ E E’, let h(e, e’) be the tan- 
+gent plane to the bisector surface of e and e’ at the junction point. 
+Let w be one of the two tangent vectors to the curve equidistant 
+from the elements in E. The seam defined by E and w participates 
+in the medial axis if and only if for every pair (e, e’), the vector w, 
+compared to h(e, e’), points toward e and away from e’. Note that 
+a particular E may not generate a seam, and that if (E, w) does 
+generate a seam, then (E, -w) cannot. 
+There are (“,) possible seams incident to our vertex, ignoring tb: 
+possibility that a seam may be governed by more than three ele- 
+ments. Checking a seam requires constructing 3(k - 3) tangent 
+planes. Checking all possible seams, then, requires fk” - 3k3 +- 
+yk2 - 3k vector-versus-plane checks. For a non-degenerate in- 
+terior vertex, we know there is a seam for each E, and it is just a 
+matter of choosing which w goes with each one; this requires only 
+4 tangent plane checks. For a very degenerate vertex, though, the 
+exhaustive method can be expensive. The combinatorial structure 
+of the seams incident to a junction point has the structure of ;a cell 
+decomposition of the surface of a sphere, and perhaps can be char- 
+acterized as some sort of Voronoi diagram, and computed efficiently 
+as such. This is an interesting issue for future research. 
+Comparison of the vector w to the plane h is performed in (exact 
+arithmetic as follows. The seam is represented implicitly in Fh? 
+as the intersection of two surfaces. A tangent w may be found 
+by crossing the gradients of the two surfaces. The plane h is the 
+orthogonal complement of the gradient v of the bisector surface 
+d$ (2, y, Z) - dz(z, y, Z) = 0. When the surface is written this way 
+(instead of in the opposite order), the gradient points “towards” e! 
+so the predicate on w can be evaluated as the sign of w . v. The 
+latter expression is the determinant of the three gradient vectors. 
+The determinant is expanded symbolically in terms of t, y, and Z, 
+and forms a cubic polynomial in those variables. If the rational box 
+containing the junction point lies entirely on one side of the zero set 
+of this cubic polynomial, then the sign can be evaluated at any of 
+the eight comers. 
+4.4 Curve Topology Algorithm 
+In this section, we present a specialized curve topology algorithm to 
+evaluate the seam curves. The algorithm divides an algebraic plane 
+curve into segments which are monotonic in both s and t. Such 
+a division allows points on the curve to be easily ordered along it. 
+Although general algebraic decomposition algorithms (e.g. [3]) can 
+be used on this problem (after being modified to handle the “root-in- 
+a-box” format), we have developed our own specialized algorithm 
+to order points along the seam curve. 
+We will present only a high-level description of the algorithm 
+here. An example of the output of our algorithm is shown in figure 
+6. More details are in [ 131. 
+The algorithm we use makes two key assumptions. First, it as- 
+sumes that the algebraic plane curve contains no self-intersections 
+or other singularities in the region of interest. Although this sig- 
+nificantly restricts the class of curves the algorithm can handle, the 
+medial axis seam curves meet this requirement. Second, we assume 
+that all points on the curve are computed distinctly-that is, their 
+containing rational boxes do not overlap. This second requirement 
+is met by lazy subdivision of the boxes. 
+First, compute all of the turning points of our algebraic plane 
+curve, f(s, t) = 0. This is done by finding all common solutions 
+between f = 0 and fs = 0, and between f = 0 and ft = 0, 
+subscripts denoting partial derivatives. This will isolate all of the 
+turning points in s and t, as well as inflection points. Next, we lind 
+all of the “edge points,” intersections off = 0 with the boundsuies 
+of the region of interest (which is assumed to be rectangular {and 
+axis-aligned). 
+184 
+
+===== PAGE 7 / 12 =====
+
+The next step is to determine the connections between the tum- 
+ing and edge points. The curve between any two of these connected 
+points will be monotonic in both s and t. To make these connec- 
+tions, the algorithm proceeds by recursively subdividing rectangu- 
+lar regions. A region falls into one of the following categories: 
+l Contains more than one turning point 
+l Contains one turning point and more than two edge points 
+l Contains one turning point and exactly two edge points 
+0 Contains no turning points 
+Treating each of these cases separately, we recurse until all regions 
+fall into the last two categories. 
+At this point, the curve f = 0 has been divided into a number 
+of segments monotonic in both s and t in the region of interest. 
+Finally, we subdivide further until the bounding boxes of the curve 
+segments do not overlap. 
+Figure 6: The output of the curve topology algorithm 
+5 Improving the Efficiency 
+Our implementation uses a lower level library to perform exact 
+computations with algebraic numbers. We refer to them as kernel 
+operations. At the top level, the algorithm spends most of its time 
+in the search step, typically involving one curve topology invoca- 
+tion and the isolation of many candidate junction points in 2-D or 
+3-D. 
+In this section, we present three sets of techniques that improve 
+the efficiency of the overall algorithm. These are: 
+l Speeding up the search algorithm using spatial subdivision 
+and linear programming. 
+l Reducing the number of kernel operations and root computa- 
+tions. 
+l Fast computation of kernel operations. 
+5.1 Speeding up the Search Algorithm 
+For 3-D St&m computations, the shrinking of a box around a root 
+is cheap compared to the expense of setting up the system. The effi- 
+ciency of the searching step is significantly affected by the number 
+of candidate elements checked against the seam analysis. Any inex- 
+pensive method for rejecting candidate boundary elements without 
+examining the potential junction points is likely to speed up the al- 
+gorithm. 
+We illustrate two methods for reducing the number of bound- 
+ary elements considered during the searching step. Neither idea re- 
+duces the asymptotic worst-case complexity of the algorithm. Both 
+are essentially culling methods, capable of choosing some elements 
+which cannot govern certain junctions. 
+5.1 .l Spatial Decomposition 
+Milenkovic [35] has proposed the following method for speeding 
+up the search step. As a preprocess, subdivide space recursively, 
+yielding an octree of axis-aligned boxes. A simply-computed pred- 
+icate, applied to each box, yields a (hopefully small) superset of the 
+set of boundary elements whose Voronoi regions intersect the box. 
+The searching step of the medial axis algorithm then proceeds 
+as follows, in the cases where the 2-D curve topology step (section 
+4.2.2) is required. Similar strategies may be invented for the other 
+cases (sections 4.2.1 and 4.2.3). The first 2-D box in the topology 
+diagram is considered as the domain of a BCzier surface forming 
+part of the bisector surface S. The control points of this Btzier 
+surface are easily computed from the parametrization of S, and the 
+3-D bounding box of the control points contains the relevant seg- 
+ment of the seam curve. The algorithm then descends the octree, 
+finding a minimal collection of nodes that cover the seam’s bound- 
+ing box. If the desired junction point lies on this first curve segment, 
+the boundary element that governs it will be among the union of all 
+of the closest-element-supersets of the nodes. Otherwise, the algo- 
+rithm moves to the second monotonic section of the seam curve in 
+the domain of S and repeats. 
+This strategy requires a heuristic for the termination of the pre- 
+process. Milenkovic [35] essentially recommends letting it run 
+(in breadth-first order, finishing a level entirely before subdividing 
+again) until the running time becomes significant compared to the 
+time which will be spent in computing the medial axis. 
+5.1.2 Linear programming 
+An alternate preprocess for speeding up the search algorithm is 
+based on linear programming. For each active boundary element, 
+the preprocess finds a polytope which is known to contain the 
+Voronoi region of the element. Only the structure local to the el- 
+ement is examined. Some examples are given in figure ‘7. The 
+polytope can be made finite by drawing a bounding box around the 
+element and taking half the distance from each of these six planes 
+to the corresponding plane of the bounding box of the whole poly- 
+hedron. The number of planes defining such a polytope is propor- 
+tional to the number of edges around a face or the number of edges 
+incident to a vertex-for practical purposes, a constant. 
+Next, the algorithm takes each pair of active boundary elements 
+and tests their polytopes for mutual intersection. With each ele- 
+ment is associated a sorted list of the other elements who are poten- 
+tially Voronoi neighbors. When the seam equidistant from elements 
+el , e2, es is traced, the desired element e4 must be a Voronoi neigh- 
+bor of all three of the seam generators. The algorithm then limits 
+its attention to the elements which are on all three lists. 
+The preprocessing involves (t) steps, each of which performs a 
+linear programming test and a list insertion. The linear program- 
+ming test takes constant time in practice, since the polytopes are 
+typically defined by fewer than ten planes. The list insertion takes 
+185 
+
+===== PAGE 8 / 12 =====
+
+1 I 
+1 .I. I _I.I_, 
+_..’ I 1 
+‘I::,,, , 
+I .‘....,, 
+I 
+~“~.L...........J. ,.‘.“’ 
+::I 
+y’--( 
+r I ! .‘. \ , 
+~.........,............,,...................! 
+. . . . , . . . . 
+.., . . . . . . : 
+Figure 7: Polytopes containing the Voronoi regions of (a) a face 
+with reflex edges, (b) a reflex edge, (c) a reflex vertex. 
+O(logn) time. The overall preprocessing running time is thus 
+O(n* log n). The asymptotic running time of the medial axis algo- 
+rithm is not increased, since the list-intersection step takes at worst 
+O(n) time for each seam traced-the same amount of time that was 
+already committed to examining all the other boundary e:lements. 
+Thus the preprocessing time of O(n* log n) is asymptotically 
+small compared to the worst-case complexity of the medial axis al- 
+gorithm, O(n4), and not much greater than the best-case medial 
+axis complexity O(n’). Moreover, the constants in the preprocess- 
+ing time are much smaller than those in the medial axis implemen- 
+tation, since the linear programming step can be programmed in 
+floating-point. Fast randomized algorithms for linear programming 
+are well known [39], but the standard simplex method is also effec- 
+tive. 
+5.2 Reducing the number of kernel operations 
+Roots of systems are only computed to the precision necessary. Our 
+representation is exact, but implicit, and the geometric algorithms 
+usually pay attention only to the rational box containing the root. 
+At all times, the rational box is shrunk only as much as necessary 
+to answer the query. This is a form of “lazy evaluation” of solutions 
+to polynomial systems. 
+The efficiency of floating-point arithmetic can be Ileveraged 
+against the problem of finding roots to systems. While refining 
+roots is based on bisectiton, an initial estimate to the root can be 
+based on a floating-point approximation. One Stiirm test is exe- 
+cuted to verify the correctness of the approximation to within a cer- 
+tain precision. In cases where the floating-point solver produces 
+a correct answer to within the desired precision, no further St- 
+operations are needed. 
+Sometimes a root of a system of equations may be isolated by 
+projecting the system onto a lower-dimensional space. Given two 
+bivariate polynomials, f(s, t) and g(s, t), we can eliminate (using 
+a Sylvester resultant) one of the two variables, leaving us with a 
+univariate polynomial, say F(s). The roots of F = 0 correspond 
+to the s coordinates of the common solutions of f = 0 and g = 0. 
+We can examine these projections of each root and count the num- 
+ber of roots contained in the projections by using univariate Sttirm 
+calculations. If there is only one root in the interval for both the 
+s- and t-projections, then we can use the two univariate formula- 
+tions instead of the multivariate formulation in order to refine the 
+root. Although the switch to a univariate formulation may not be 
+possible when the root is known to only a rough precision, as the 
+precision is refined, it becomes more likely that a univariate formu- 
+lation will suffice, since as the box bounding the root is tightened, 
+the projections of that box become smaller and less likely to contain 
+the projections of other roots. 
+5.3 Speeding up the kernel operations 
+Our implementation spends most of its time in the Stiirm sequence 
+code, refining roots of systems in two and three dimensions. A 
+multivariate St&m sequence computation is executed in two mai-n 
+stages. In the elimination stage, a system of many equations i:n 
+many unknowns is reduced to a single polynomial, the volum’: 
+function. The sequence evaluation stage counts the number of sign 
+changes in the Stiirm sequence of the volume function. 
+5.3.1 Elimination 
+The elimination stage essentially turns a multivariate root-counting 
+problem into a univariate root-counting problem. It involves (in 
+the trivariate case) adjoining an extra equation u + (cy - ~)(/3 -- 
+y)(y - z), substituting in various combinations of rational nurnber:j 
+for cy, /I, and y corresponding to the comers of the box, and then 
+eliminating 5, y, and z from the resulting system of four equations. 
+For two-dimensional systems, the elimination stage is accom- 
+plished by means of three Sylvester resultants. The repeated resul- 
+tants introduce extra factors into the volume function, but these are 
+easily identified and quickly removed. The elimination process is 
+quick, and the time is spent mainly in the sequence evaluation stage. 
+For three-dimensional systems, repeated use of Sylvester resul.. 
+tants can result in extraneous factors. Instead, we use Macaulay’s 
+resultant [34], which gives the volume function as the quotient of 
+the determinant of a matrix M and the determinant of a sub-matrix 
+of M. When the system consists of three quadrics in 2, y, and z.. 
+as it does in the worst case for the medial axis problem, M is an 
+84 x 84 matrix whose entries are constants or linear polynomials in. 
+the variable U. We utilize the sparse representation of the matrix to 
+quickly evaluate the determinants. 
+The system can be arranged so that the Macaulay denominator 
+depends only on the coefficients of the system, and does not contain 
+(Y, p, y, or U. The determinant is then a constant, so no polynomial 
+division is necessary. One only needs to check the denominator 
+matrix for singularity. The denominator is also hidependent of the 
+point (cu, ,0, y) in space at which the Stiirm sequence is evaluated, 
+so it need be checked only once per system. 
+The Macaulay numerator is arranged into block form: 
+( 
+A B 
+C(a,A-f) D(%P,Y) +uI > 
+where A and B contain coefficients of the system, and C and D 
+depend on the point ((Y, p, y). A is 76 x 76, while D is 8 x 8. 
+By performing block Gaussian elimination on this matrix, the bulk 
+of the work of taking the determinant of the Macaulay numerator 
+is performed before (Y, p, 7 are known. The precomputation Icon- 
+sists of finding the LU-decomposition of A and computing IAl and 
+A-‘B. Then, for each ((Y, ,0, y), we compute H = D-C.(A-lB) 
+and the 8 x 8 symbolic determinant IH + ~11. 
+186 
+
+===== PAGE 9 / 12 =====
+
+5.3.2 Sequence evaluation 
+Stiirm sequences can be evaluated by constructing the actual se- 
+quence of polynomials {f(u), f’(u), fa(~), . . . } where fi = 
+GCD(f;-1, fi-a), and counting the sign changes in the sequence 
+of constant terms. But the subresultant polynomial remainder se- 
+quence algorithm [9] avoids the exponential coefficient growth in 
+the polynomial GCD, and tends to be more efficient, especially 
+for high-degree polynomials. The subresultant algorithm computes 
+the coefficients of the sequence’s polynomials as determinants of 
+matrices. For root-counting, we need only the signs of the con- 
+stant terms of the polynomials in the sequence. The problem is thus 
+reduced to computing the signs of determinants of matrices with 
+rational entries, or equivalently, integer entries. 
+The determinant-sign problem has been well-studied in compu- 
+tational geometry ([7], [8], [12]), but most approaches are efficient 
+only for small matrices (order less than 10 and entries of fewer than 
+53 bits). We find the fastest general-purpose algorithm to be Gaus- 
+sian elimination over a series of finite fields, followed by recon- 
+struction in accordance with the Chinese remainder theorem. We 
+use the implementation in the software package LiDIA 1221. The 
+finite-field algorithm is protected by a floating-point filter, based on 
+an idea by James Demmel and implemented using the LAPACK li- 
+brary [15]. The filter computes the singular-value decomposition of 
+the matrix in double-precision floating-point, extracts the determi- 
+nant sign from the decomposition, and examines the singular values 
+to decide whether the sign is dependable. The filter runs in about 
+one-tenth the time of the Chinese remainder algorithm, and for low- 
+degree polynomials, it filters 80-100% of the matrices. 
+5.4 Performance of kernel operations 
+Figure 8 presents a timing measurement from a representative 3-D 
+Sttlnn computation. The program was run on a 4OOMHz Pentium 11 
+PC. The time to set up the system includes the time to determine the 
+Macaulay denominator and that portion of the Macaulay numerator 
+which is not dependent on the evaluation point. This needs to be 
+done only one time per system of equations. To count the number 
+of roots in a box, 8 comer points are tested. Splitting the box in 
+half requires 4 more evaluations; in quarters, 10 more; in eighths, 
+19 more. 
+Figure 9 presents timing results from the curve topology algo- 
+rithm applied to four typical examples. The computer used for these 
+timings is based on a 2OOMHz Mips R4400 processor. The cases 
+listed are representative curves that arise in the medial axis compu- 
+tation. Each of the curves has total degree four. 
+6 Handling Degeneracies 
+We hold that the degeneracies that arise in the medial axis problem 
+are of only a few types, and may be detected and dealt with ex- 
+plicitly during the course of the algorithm. This is to be contrasted 
+with, for example, the problem of CSG boundary evaluation (see 
+[32] for a treatment) in which one may be faced with a great variety 
+of degenerate situations, some of which have no simple resolution. 
+Only two forms of degeneracy pose a problem to the searching al- 
+gorithm: the degenerate junction and the degenerate seam. A sheet 
+cannot be equidistant from three boundary elements. If it were, 
+two of the elements must have coincident “flats’‘-points, lines, or 
+planes-and these two elements’ Voronoi regions will be separated 
+by at least one intervening vertex or edge. 
+In this section we describe the two ways in which degeneracy 
+is manifested in the medial axis problem, and propose means for 
+dealing with these situations. 
+Figure 8: Timing for 3-D Stiirm operations 
+Ex. 1 
+Number of 1 
+turning points 
+Time to find 
+turning points (set) 43.0 
+(uses 2-D Sttirm) 
+Number of 2 
+edge points 
+Time to find 
+edge points (set) 0.1 
+(uses 1-D Stiirm) 
+Time to run 
+topology recursion 0.03 
+(uses 1-D Stiirm) 
+Ex. 2 Ex. 3 
+-t 
+3 2 
+101 67.7 
+---l-- 6 4 
+I 
+I 
+0.18 0.13 
+Ex. 4 
+2 
+69.0 
+Figure 9: Timing for curve topology 
+6.1 The degenerate junction 
+A junction is said to be degenerate when it is equidistant from five 
+or more boundary elements. Our algorithm detects degenerate junc- 
+tion points by a three-stage process. 
+1. Discover, during the searching step, that the interval or box 
+containing the starting point overlaps with that of a candidate 
+end point, even after the intervals or boxes have been reduced 
+to a reasonably small size. 
+2. Check whether the four bisector surfaces involved actually 
+meet at some point, using a Dixon resultant [ 161. 
+3. If so, either further refine the root to the precision recom- 
+mended by Canny’s gap theorem [lo], or check for a root of 
+the system 
+inside the overlap of the boxes. 
+The first two steps may be regarded as filters for avoiding step 3 
+where possible. 
+The algorithm for searching away from a degenerate junction is 
+given in full generality in section 4.3. 
+6.2 The degenerate seam 
+A seam is degenerate when it is governed by four or more bound- 
+ary elements. Our algorithm does not need to do extra work to 
+discover degenerate seams. Such a seam is analyzed using three of 
+its governors, while a fourth governor is necessarily discovered dur- 
+ing the search for the ending junction. While attempting to isolate 
+a zero-dimensional solution to this system, the algorithm encoun- 
+ters a Sttlnn volume function that is identically zero, meaning that 
+the solutions set is infinite. When this occurs, the extra governor is 
+simply added to the list of seam governors. 
+187 
+
+===== PAGE 10 / 12 =====
+
+Figure 10: A simple non-convex polyhedron.
+7 Implementation and Performance!
+In this section, we describe implementation of our algorithm and
+highlight its performance on two polyhedra.
+7.1 lmplementation
+The kernel operations have been fully implemented in C++. Rou-
+tines for root isolation in one, two, and three dimensions, take ad-
+vantage of the efficiency techniques described in sections 5.2 and
+5.3. The curve topology algorithm is also fully implemented. Our
+implementation is based on the data structures for exact arithmetic
+in Lidia [22] and also takes advantages of routines from LAPACK
+[15]. The current version of the geometric kernel consists of about
+20,000 lines of C++ code.
+The high-level, non-time-critical part of the system is in pro-
+totype stage, and is partially implemented in about 3,000 lines of
+Mathematics code. The Mathematics code has not been interfaced
+with the C++ implementation. Currently our system has been used
+to compute medial axes of small polyhedra composed of up to about
+20 faces.
+Figure 12: Two example polyhedra. (Only internal junctions are
+counted.)
+7.2 Results
+Figures 10 and 11 show a simple non-convex polyhedron (two tetra-
+hedra attached at a face) and its medial axis. The medial surfaces
+are parts of planes and cones, and the seams are segments of lines
+and ellipses.
+A more complex example is given in figures 13 through 16. This
+polyhedron is an octagonal box with two opposing slots. The two
+non-convex edges are separated by a very small gap. Visualizing the
+entire medial axis is difficult. We show a schematic diagram, figure
+14, that gives some idea of its geometric complexity. We have: sub-
+stituted straight line segments for the seams. Figure 15 magnifies
+the schematic in the interesting central region where the non-convex
+edges approach each other. Finally, the hyperbolic paraboloid that
+is the bisector of these two edges is shown in figure 16. The seams
+in the last figure are hyperbolas; the medial axis also contains linear
+and elliptical seams. In fact, the elliptical seams in both examples
+are treated as quartics, since they lie in planes with irrational coef-
+ficients.
+8 Conclusions and Future Work
+We have presented an accurate algorithm to compute the medial
+axis of 3-D polyhedron using exact arithmetic. We have also
+highlighted a number of techniques to improve its efficiency, and
+demonstrated its performance on a few polyhedra. We are currently
+working on a C++ implementation of the higher level routines so as
+to develop a complete and automatic medial axis implementation
+In our future work, we plan to investigate use of perturbation tech-
+niques to handle degeneracies, and to apply the system to complex
+polyhedra composed of hundreds of faces.
+References
+188
+
+===== PAGE 11 / 12 =====
+
+Figure 13: A polyhedron with two non-convex edges coming very
+close together.
+Figure 14: A schematic of the medial axis, with line segments rep-
+resenting junctions.
+
+===== PAGE 12 / 12 =====
+
+IT51 
+[=I 
+1271 
+P81 
+1291 
+[301 
+I311 
+~321 
+[331 
+[341 
+[351 
+[361 
+[371 
+D81 
+t391 
+1401 
+E411 
+C. M. Hoffmann. How to construct the skeleton of csg ob- 
+jects. In A. Bowyer and J. Davenport, editors, Proceedings 
+of the Fourth IMA Conference, The Mathematics of-Surfaces, 
+University of Bath, UK, September 1990. Oxford University 
+Press, New York, 1994. 
+C.M. Hoffmann. Geometric and Solid Modeling. Morgan 
+Kaufmann, San M,ateo, California, 1989. 
+Kenneth E. Hoff III, Tim Culver, John Keyser, Ming Lin, and 
+Dines11 Manocha. Fast computation of generalized voronoi 
+diagrams using graphics hardware. Technical Report TR99- 
+011, University of North Carolina-Chapel Hill, 1999. 
+T. Imai. A topolol:y oriented algorithm for the Voronoi dia- 
+gram of polygons. In Proc. 8th Canad. Conf Compvt. Geom., 
+pages 107-I 12. Carleton University Press, Ottawa, Canada, 
+1996. 
+J.K. Johnstone. The Sorting of points along an algebraic 
+curve. PhD thesis, Cornell University, Department of Com- 
+puter Science, 1987. 
+J. Keyser, S. Krishnan, and D. Manocha. Efficient and ac- 
+curate b-rep genera.tion of low degree sculptured solids using 
+exact arithmetic. In ACMLSIGGRAPH Symposium on Solid 
+Modeling, pages 4;!-55, 1997. 
+John Keyser, Tim Culver, Dinesh Manocha, and Shankar Kr- 
+ishnan. Mapc: A library for efficient and exact manipulation 
+of algebraic points and curves. In Proc. 15th Annu. ACM Sym- 
+pas. Comput. Geom., 1999. 
+Shankar Krishnan. Eficient and Accurate Boundary Eval- 
+uation Algorithms .for Boolean Combinations of Sculptured 
+Solids. PhD thesis, University of North Carolina-Chapel Hill, 
+1997. 
+D. T. Lee. Medial axis transformation of a planar shape. IEEE 
+Trans. Pattern Anal. Mach. Intell., PAMI-4363-369, 1982. 
+ES. Macaulay. On :some formula in elimination. Proceedings 
+of London Mathematical Society, 1(33):3-27, May 11902. 
+V. Milenkovic. Robust construction of the Voronoi diagram 
+of a polyhedron. In Proc. 5th Canad. Conf Comput. Geom., 
+pages 473-478, 1993. 
+P. S. Milne. On the solutions of a set of polynomial equa- 
+tions. In Symbolic and Numerical Computation for Artificial 
+Intelligence, pages 89-102, 1992. 
+P Pedersen. Multivariate sturm theory. In Proceedings of 
+AAECC, pages 318--332. Springer-Verlag, 1991. 
+Jayachandra Reddy and George Turkiyyah. Computation of 
+3D skeletons using a generalized Delaunay triangulation tech- 
+nique. Computer-Aided Design, 27(9):677-694, 1995. 
+R. Seidel. Linear programming and convex hulls made easy. 
+In Proc. 6th Ann. ACM Conf on Computational Geometry, 
+pages 211-215, Berkeley, California, 1990. 
+D. J. Sheehy, C. G. Armstrong, and D. J. Robinson. Com- 
+puting the medial surface of a solid from a domain Delaunay 
+triangulation. In Proc. ACM/IEEE Symp. on Solid A4odeling 
+and Applications, may 1995. 
+Evan C. Sherbrooke, Nicholas M. Patrikalakis, and E;rik Bris- 
+son. Computation of the medial axis transform of 3-D poly- 
+hedra. In Solid Modeling, pages 187-199. ACM, 1995. 
+~421 
+r431 
+WI 
+1451 
+[461 
+r471 
+V. Srinivasan, L. R. Nackman, J.-M. Tang, and S. N. Meshkat. 
+Automatic mesh generation using the symmetric axis trans- 
+form of polygonal domains. Proc. IEEE, 80(9):1485-1501, 
+September 1992. 
+K. Sugihara and M. Iri. A solid modeling system free from 
+topological inconsistencies. J. Inf Proc., If: Proc. Sot. of 
+Japan, 12(4):380-393, 1989. 
+I? J. Vermeer. Medial Axis Transform to Boundary Represen- 
+tation Conversion. PhD thesis, CS Dept., Purdue University, 
+West Lafayette, Indiana 47907-1398, USA, 1994. 
+Jules Vleugels and Mark Overmars. Approximating general., 
+ized Voronoi diagrams in any dimension. Technical R’epon: 
+UU-CS-1995-14, Department of Computer Science, Utrecht 
+University, 1995. 
+F. E. Wolter. Cut locus and medial axis in global shape in- 
+terrogation and representation. Computer Aided Geometric 
+Design, 1992. 
+1. Yu. Exact arithmetic solid modeling. PhD thesis, Purdue 
+University, 1992. 
+190 

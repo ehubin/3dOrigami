@@ -1,0 +1,1227 @@
+
+
+===== PAGE 1 / 17 =====
+
+HAL Id: hal-04262568
+https://hal.science/hal-04262568v2
+Preprint submitted on 27 Oct 2023
+HAL is a multi-disciplinary open access
+archive for the deposit and dissemination of sci-
+entific research documents, whether they are pub-
+lished or not. The documents may come from
+teaching and research institutions in France or
+abroad, or from public or private research centers.
+L’archive ouverte pluridisciplinaire HAL, est
+destinée au dépôt et à la diffusion de documents
+scientifiques de niveau recherche, publiés ou non,
+émanant des établissements d’enseignement et de
+recherche français ou étrangers, des laboratoires
+publics ou privés.
+Distributed under a Creative Commons Attribution - NonCommercial - NoDerivatives 4.0
+International License
+A clean, robust 3D medial axis
+Bastien Durix, Kathryn Leonard, Sylvie Chambon, Géraldine Morin
+To cite this version:
+Bastien Durix, Kathryn Leonard, Sylvie Chambon, Géraldine Morin. A clean, robust 3D medial axis.
+2023. ￿hal-04262568v2￿
+
+===== PAGE 2 / 17 =====
+
+Durix et al. / A clean, robust 3D medial axis 1
+A clean, robust 3D medial axis
+Durix Bastien1, Leonard Kathryn2, Morin Géraldine1, Chambon Sylvie1
+bastien.durix@irit.fr, kleonard.ci@gmail.com, geraldine.morin@irit.fr, sylvie.chambon@irit.fr
+1 IRIT
+2 Occidental College
+Abstract
+Computing the medial axis of a 3D surface mesh is challenging. Points on the discrete medial axis can be deﬁned as interior
+Voronoï vertices of the surface mesh, but the resulting medial structure rarely has clean connectivity and consistent geometry.
+In this paper, we provide a medial axis computation based on the Voronoï diagram able to generate manifold medial sheets with
+coherent topology and geometry, generating consistent geometric structures similar to those in the continuous setting. Because
+of the correspondences between the surface mesh and resulting medial mesh, we also provide an efﬁcient method for separating
+the shape into coherent regions associated to medial structures. This correspondence allows for a medial-axis-based ﬁltration
+of surface structures to generate a Hausdorff ε-approximation of the surface points based on a simpliﬁed medial axis, thereby
+providing a robust medial representation with guaranteed surface approximation.
+Keywords: Skeleton, structure, mesh, delaunay, voronoï1
+1. Introduction2
+Medial representations are quite popular in computer graphics be-3
+cause they combine implicit and explicit shape representations, and4
+offer a lower dimensional model of a 3D shape, the skeleton, that5
+captures the geometric information from the boundary, while a ra-6
+dius or distance function describes the interior of the shape. The7
+ﬁrst such model, the Blum medial axis, was introduced in [Blu73]8
+for 2D shapes. It consists of a skeleton and a radius function de-9
+ﬁned at each point of the skeleton that gives the distance of the10
+skeleton point to the boundary. A useful discretization of the Blum11
+medial axis relies on a shape’s Delaunay triangulation and its dual,12
+the V oronoi diagram.13
+As described in [TDS ∗16], several approaches exist to compute14
+a full skeleton. V oxel-based methods [HR08, ADBS11] which are15
+a 3D version of classical 2D thinning methods, easily maintain the16
+structure of the shape, and can be less subject to noise. In [JST15],17
+the voxel grid is the support of a mass transport process, leading18
+to a multiscale, simpliﬁed skeleton. In [YLJ18], the authors use a19
+Delaunay tetrahedralization of the open voxels of a shape boundary20
+to compute a voxel core that converges to the true medial axis as21
+the voxelization of the shape becomes dense. A separate pruning22
+step then removes noisy elements in the voxel core with a guaran-23
+tee on the approximation and the homotopy equivalence. In these24
+approaches, the shape must ﬁrst be converted to a voxel grid, and25
+its sampling density is directly linked to the skeleton accuracy,26
+thereby introducing an additional parameter to the model. Also,27
+in the voxel based approaches, no global and topologically coher-28
+ent structure of the skeleton is available. Other methods compute29
+a skeleton from boundary samples [RA V ∗19, MBC12, LBKP21].30
+Each boundary sample is characterized by a position and a nor-31
+mal, and no additional structure is needed. A set of tangent spheres32
+can then be computed, ﬁltering any non-descriptive ones. Methods33
+based on deep learning have also been proposed. In [YYW ∗20], a34
+simpliﬁed skeleton is computed and accurately describes the shape35
+(depending on the chosen precision) but they do not capture the36
+shape structure, as the resulting skeleton is typically not a graph.37
+In [CD23] the local structure of the skeleton is preserved in gen-38
+eral, but there is no guarantee on the coherence of the connectivity,39
+that is, a tetrahedron may belong to the resulting skeleton. In fact,40
+by construction deep learning methods do not maintain a clear re-41
+lationship to the shape boundary. In [RLS ∗21], the shape and its42
+skeleton are linked but the representation is implicit, giving neither43
+connectivity nor structure.44
+Other approaches, including ours, are based on the computation45
+of a V oronoi diagram. For simple shapes such as polyhedra, the46
+V oronoi diagram can be explicitly computed [SPB96]. The power47
+crust applies a power diagram to compute a mesh and a skeleton48
+from a disorganized point cloud [ACK01].49
+Underlying many of these methods is an attempt to address the50
+major drawback of the medial axis in applications: a lack of sta-51
+bility, in that a small change on the shape boundary can produce52
+large changes in the medial axis. Moreover, edges linked to several53
+medial axis surface sheet may appear in non singular regions, lead-54
+ing to connectivity and structural inconsistencies. Many approaches55
+have been proposed to construct a robust medial axis for 3D shapes,56
+with varying degrees of success. Classical approaches to robustness57
+
+===== PAGE 3 / 17 =====
+
+2 Durix et al. / A clean, robust 3D medial axis
+are based on pruning [DZ03, AL01] prune the V oronoi diagram to58
+obtain a sensible medial structure. [YSC ∗16] compute a signiﬁ-59
+cance measure: the authors demonstrate that a global measure re-60
+lated to Erosion Thickness, generalized from 2D to 3D, is more61
+efﬁcient than a local measure. The well-known Scale Axis Trans-62
+form [MGP10] has the advantage of taking into account multiple63
+medial representations. They propose a multi-scale representation64
+through the scale axis transform that takes into account a scaling of65
+medial balls, but the approach results in some artifacts that require66
+a separate pruning step. This method has generated multiple vari-67
+ants and improvements [LWS ∗15, PWG∗19] that produce a sim-68
+pliﬁcation of a V oronoi skeleton. However, these methods do not69
+maintain a robust link to the 3D mesh. In contrast, our goal in the70
+current work is to be independent of a pruning step. We both main-71
+tain global connectivity consistency in the structure of the medial72
+axis and geometric consistency with the surface mesh, in the sense73
+that the Delaunay tetradhedralization of the output surface mesh is74
+dual to the output V oronoi skeleton.75
+Many researchers compute a curve skeleton, which is a network76
+of curves, instead of the full skeleton in 3D, [CSM07, SYJT13].77
+A curve skeleton is appealing because it addresses the previ-78
+ously mentioned instability while capturing most of the major79
+structures of the shape. It can be estimated by mesh contraction80
+[ATC∗08, LW18, ZLZ20], or through the computation of a 3D81
+skeleton [DS06, TAOZ12], or directly from the mesh, using tools82
+such as local separators [BR21]. Curve skeletons necessarily main-83
+tain only a weak relationship to the surface mesh, however, and84
+there are some shape structures (funnel shapes, for example) that85
+are not well-suited for description by a single curve.86
+Depending on particular goals and applications for a skeletal87
+model, different properties of the skeleton may be desired, such as88
+continuity, connectivity, geometric correspondence with the bound-89
+ary, or a particular level of simplicity. These variations in goals have90
+produced variations in skeletonization algorithms that make differ-91
+ent trade-offs, as the work cited in the previous paragraphs demon-92
+strates. In this article, we take as input a Delaunay surface mesh93
+of a shape and compute a medial axis that has a full array of de-94
+sirable properties. This approach is similar to a 2D skeletonization95
+method by propagation [DCL∗19,DMC ∗19], where the skeleton is96
+computed step by step, and where a Hausdorff distance criterion97
+identiﬁes noise so that insigniﬁcant parts of the medial axis are not98
+computed. The next section describes this simpliﬁed skeletoniza-99
+tion.100
+1.1. Simpliﬁed skeletonization101
+In this paper, we present a method to compute a simpliﬁed, robust102
+medial axis for a 3D shape from a Delaunay input mesh represent-103
+ing the shape surface. Our approach is based on a propagation of104
+medial balls, or equivalently, Delaunay tetrahedra, which means we105
+do not require a pruning step. A Delaunay tetrahedron is a tetrahe-106
+dron such that its circumscribed sphere does not contain any other107
+point from the surface mesh. Therefore, each skeletal point is as-108
+sociated to a tetrahedron, and the edges between skeletal points are109
+associated to tetrahedra that share faces. Finally, a Delaunay mesh110
+is a mesh for which each triangle is a triangle from a Delaunay111
+tetrahedron. Local geometry is combined into a global structure on112
+the skeleton, which is then used for the simpliﬁcation analysis. This113
+global structure consists of sheets, which are surface portions of the114
+skeleton, boundary paths, which are curve boundaries of a single115
+sheet, and singular paths, which are curve portions separating dif-116
+ferent sheets (See Section 3 for details). As a result, our approach117
+guarantees the following properties (cf. Figure 1):118
+• The topological and geometric relationships between the sur-119
+face and medial meshes are preserved. Speciﬁcally, (a) the re-120
+sulting medial mesh is homotopically equivalent to the output121
+surface mesh by construction, and (b) the points on the medial122
+mesh are V oronoi duals of Delaunay tetrahedra generated by the123
+surface mesh. Each vertex, edge, face and sheet of the medial124
+axis corresponds to a well-speciﬁed set of vertices, edges, faces,125
+or region of the surface mesh. This means that we maintain cor-126
+respondence between the surface and medial meshes.127
+• The geometric structures of the medial mesh are clean and128
+coherent. The skeleton is divided into sub-structures of sheets129
+with topologically consistent manifold interiors, which are sep-130
+arated and bounded by manifold paths. The skeleton mesh itself131
+is connected for an input shape with a single component due to132
+the homotopy equivalence.133
+• The simpliﬁed medial axis provides a guaranteed134
+ε-approximation to the original surface points.The simpliﬁed135
+medial mesh generated for some choice ofε > 0 corresponds to a136
+subset of the original surface points that areε-close in Hausdorff137
+distance to the original surface points. All topological features at138
+a scale larger than ε are maintained, though features at a scale139
+smaller than ε may be deleted.140
+In what follows, we ﬁrst describe the continuous and discrete141
+constructions of the interior Blum medial axis (BMA) in Section 2.142
+In Section 3, we describe the global structures of the discrete BMA143
+and describe how these are related to local structures. Finally, we144
+describe the algorithm for generating the simpliﬁed skeleton based145
+on the ε error parameter in Section 4, and present results in Section146
+5. We also include a brief appendix to explain some special cases147
+that arise in this discrete setting, and how we handle them.148
+2. Geometry of the interior medial axis149
+The Blum medial axis is structured into parts that offers strong150
+geometric properties in the smooth setting; we seek and provide151
+analogs in the discrete setting. In this section, we describe these152
+properties and the correspondences between smooth and discrete153
+representations.154
+2.1. Smooth setting155
+In this section, we recall the structure of the medial axis in the156
+smooth setting where the shape surface is differentiable, in order157
+to provide an analogy with the discrete setting we are interested in.158
+Given a closed, non-self-intersecting surface S ⊂ R3 with con-159
+tinuous curvature and a ﬁnite set of curvature extrema and ridge160
+curves, the interior Blum medial axis can be deﬁned as the locus of161
+centers of maximally inscribed spheres within the surface, together162
+with their radii. This produces a skeleton composed of sphere cen-163
+ters that is a Whitney stratiﬁed setM with a ﬁnite number of strata.164
+
+===== PAGE 4 / 17 =====
+
+Durix et al. / A clean, robust 3D medial axis 3
+(a) Subdivision of a skeleton into sheets
+(b) Surface mesh regions associated to each sheet of the skele-
+ton
+Figure 1: Global structures of the skeleton (a), and their consistency
+with the surface mesh (b). The color coding in the ﬁgures shows
+which global skeletal structures in (a) correspond to which global
+shape structures in (b).
+The points of M are traced out by the centers of the inscribing165
+spheres resulting in a medial skeleton composed of smooth sur-166
+faces and curves joined along well-understood singularities. A ra-167
+dius function r is deﬁned for each point of M, giving the associ-168
+ated radius of the inscribing sphere. Intuitively, a Whitney strati-169
+ﬁed set is an arrangement of nicely behaved sets called strata, so170
+that any non-empty intersection of strata is a manifold of lower di-171
+mension, the intersection is transverse, and the tangent spaces of172
+the strata converge appropriately at these intersections. See, for ex-173
+ample, [Dam05] for details.174
+In the case of the medial axis for the surface of a 3D shape, such175
+as in Figure 2, each stratum is either a 2D medial sheet (in light blue176
+in the ﬁgure), a 1D medial curve (in red – generically, these will be177
+2D), an intersection point or curve where two higher dimensional178
+strata meet (in black), or a boundary point or curve bounding a179
+higher dimensional stratum (in blue). See [GK04] for an exhaustive180
+classiﬁcation of medial axis points. Away from singularities and181
+sheet or curve boundaries, the degree of differentiability of M is182
+equal to the degree of differentiability of S.183
+As a stratiﬁed set, the points of M are generically one of three184
+types, see Figure 2:185
+1. Regular points in the interior of a top-dimensional stratum, in186
+light blue. For regular points, the medial spheres are bitangent to187
+S, which means that each point of M corresponds to two points188
+of S, one on either side of M (“above" and “below").189
+Figure 2: A skeleton structure in the continuous setting: a contin-
+uous shape and its skeleton containing three medial sheets (and
+corresponding strata). Regular skeleton points (in light blue) lie
+in the interior of a skeleton sheet. They are bounded by singular
+boundary points (in blue), and intersect at interior singular curves
+(in black). The medial axis also contains two non-generic medial
+strata of lower dimension, curves (in red).
+2. Singular interior points where two strata intersect, in black.190
+For singular interior points, the medial spheres will be at least191
+tri-tangent to S, corresponding to the merging of bitangencies192
+on at least two strata meeting along the singularity.193
+3. Singular boundary points where the inscribing sphere oscu-194
+lates at an extremum of at least one principal curvature, in blue.195
+For singular boundary points, the medial sphere has only one196
+tangency, the point of extremal curvature, corresponding to the197
+merging of at least one bitangency where the points “above" and198
+“below" merge into a single point.199
+2.2. Discrete setting200
+A primary contribution of our paper is to construct well-deﬁned dis-201
+crete versions of the medial structures described for differentiable202
+shape surfaces in the previous section. In applications, the smooth203
+surface S described above is typically replaced by a sampling of its204
+points and connectivity between those points, a surface mesh con-205
+sisting of vertices joined by edges and faces. Similarly, the smooth206
+strata of the medial skeleton are replaced by a medial mesh. In what207
+follows, we assume sampled points of a 3D shape surface are ver-208
+tices in a Delaunay surface mesh S, with an induced medial mesh209
+M. Points on M can then be computed as interior V oronoi vertices210
+generated by the surface points. Because the V oronoi vertices will211
+be centers of the circumspheres of its dual, the Delaunay tetrahe-212
+dralization of the volume enclosed byS, the tetrahedra will provide213
+a discrete analogue of medial balls in the smooth case. Similarly,214
+distance from the V oronoi vertices to the surface points will pro-215
+vide a discrete version of the radius function r. As the sampling216
+on the surface becomes dense, converging to the smooth surface,217
+a subset of this discrete medial skeleton converges to the smooth218
+skeleton [DZ03].219
+With this characterization, much of the structure from the dif-220
+ferentiable setting carries over. The resulting discrete M will have221
+three types of points, see Figure 3 for illustration:222
+1. Regular points , in (3a). For regular points, each point of M223
+will typically correspond to a tetrahedron that crosses the in-224
+terior of S, with three points of S on one side of M and one225
+point on the other side (“above" and “below"), see left, but other226
+
+===== PAGE 5 / 17 =====
+
+4 Durix et al. / A clean, robust 3D medial axis
+V1
+V2
+V3
+V4
+N
+V1
+V2
+V3
+V4
+N
+(a) Regular nodes
+V1
+V1
+V3 V4
+N
+(b) Singular node
+V1
+V2
+V3
+V4
+N
+(c) Boundary node
+Figure 3: A sampling of some different (non-exhaustive) conﬁgu-
+rations for a discrete medial node N, in blue, corresponding to dif-
+ferent point type classiﬁcations ofN. The vertices (Vi)i=1...4 are its
+corresponding boundary points and tetrahedron. Among the tetra-
+hedral edges, the green edges belong to the surface mesh and the
+red dashed ones traverse the volume inside the 3D shape. Note that
+the node N is not necessarily inside the tetrahedron.
+conﬁgurations are possible such as two points above and two227
+below [CDE∗00], see right.228
+2. Singular interior points , in (3b). For singular interior points,229
+the tetrahedron will correspond to the convergence of tetrahedra230
+of regular points on at least two strata meeting along the singu-231
+larity. In this case, there will be at least two sets of points above232
+and below corresponding to at least three disconnected regions233
+of the surface.234
+3. Singular boundary points , but without a notion of tangency,235
+in (3c). For singular boundary points, the points inS composing236
+the tetrahedron will be adjacent and belong to a single connected237
+component, with the two “sides" of M having converged.238
+This framework gives the foundation for the structures we use to239
+generate the strata of the discrete skeleton. Unfortunately, guaran-240
+tees of topological and geometric coherence from the smooth set-241
+ting do not automatically carry over, as rounding errors and other242
+issues often lead to medial skeletons with more complicated struc-243
+tures [TDS∗16]. Our algorithm addresses these issues to produce a244
+geometrically coherent skeleton.245
+3. Hierarchical structure of the discrete skeleton246
+In what follows, we distinguish between local medial structures247
+(e.g., medial points and neighbors, corresponding surface points248
+and neighbors) and global medial structures (e.g., medial sheets,249
+boundaries, singular sets). Our algorithm analyzes local structures250
+to build coherent global structures.251
+The constructions presented in this section are necessary for un-252
+derstanding the algorithm in Section 4. We deﬁne the global medial253
+structures in Section 3.5, which allow us to segment the surface254
+correspondingly in Section 3.2. In section 3.3, we present the local255
+medial structures, derived from the V oronoi and Delaunay duality256
+linking the surface mesh to the medial mesh, that provide the basis257
+for the global structures and also for the simpliﬁcation of the me-258
+dial skeleton. Section 3.4 describes how the global structures are259
+obtained from the local structures. Finally, section 3.5 describes260
+how we compute the simpliﬁed 3D medial axis.261
+3.1. Global structures of the discrete skeleton262
+Medial sheets are typically two-dimensional for a 3D shape, but263
+can also be one-dimensional. Sheet boundaries and singular paths264
+are typically one-dimensional, but can also be zero-dimensional.265
+For simplicity, we present our algorithm for two-dimensional case,266
+but the process is analogous in the one-dimensional or zero-267
+dimensional cases.268
+Sheets, the top-dimensional strata described in Section 2, are the269
+fundamental building blocks of the skeleton. We deﬁne a discrete270
+sheet of the medial axis to be a connected set of regular medial271
+points for which the corresponding regions on the surface mesh272
+have two connected components, together with any neighboring273
+singular points (corresponding to more than two connected com-274
+ponents) or boundary points (corresponding to one connected com-275
+ponent) (see Figure 3). Each sheet corresponds to one or more con-276
+nected portions of the input surface mesh. Furthermore, each sheet277
+has two sides, and can be therefore viewed as two oriented sheets,278
+where each oriented sheet corresponds to a different side of the sur-279
+face mesh, “above" or “below", see Figures 4a and 4b).280
+The non-regular medial points associated to a sheet are members281
+of either a boundary path, Figure 4c, corresponding to the ridge282
+curves on the shape surface where the two sides of the surface cor-283
+respondence of a medial sheet have merged, or a singular path ,284
+Figure 4d, where two medial sheets intersect, or both. The bound-285
+ary and singular paths are typically 1D strata. Boundary paths with286
+no singular points belong to a single sheet, but all singular paths287
+belong to multiple sheets. When boundary points are also singular,288
+it is because a singular set has intersected a boundary path.289
+These global medial structures correspond to structures on the290
+surface mesh S. Sheets correspond to coherent regions of the shape291
+surface, such as protrusions. Boundary paths correspond to curva-292
+ture extrema in the surface, such as ridges. Singular paths corre-293
+spond to closed paths on the surface delineating connections be-294
+tween coherent shape regions. Finally, we note that a path within a295
+sheet, which means a path of regular points, generates two paths on296
+the shape surface: one “above" and one “below". This means that297
+each surface path can be attributed to one of the two oriented sheets298
+associated to a medial sheet.299
+3.2. Segmenting the surface using sheets and paths300
+Using these global structures, we can segment the shape surface301
+into coherent regions. In Figure 4, we associate the singular path302
+
+===== PAGE 6 / 17 =====
+
+Durix et al. / A clean, robust 3D medial axis 5
+(a) Mesh portion covered by the
+lower main sheet in darker gray
+(b) Mesh portion covered by the up-
+per main sheet in dark gray
+(c) Boundary paths are dashed
+ (d) Singular path is dashed
+Figure 4: Correspondences between skeletal structures and surface
+regions. Solid line boundary paths (darker blue) and singular paths
+(black) represent paths on the mesh. Dashed paths represent the
+corresponding paths on the surface mesh. (a) The medial boundary
+path of the main (horizontal) sheet separates the surface into two
+regions, above and below, with the lower region shown in darker
+gray. (b) The upper surface region, however, is interrupted by re-
+gion associated to the smaller medial sheet that is connected to one
+side of the main sheet. The singular path separating the two sheets
+corresponds to the black dashed path on the surface mesh and the
+resulting dark gray region corresponds to the surface that is above
+the main sheet. (c) If a medial boundary path is not a closed loop,
+the surface path will also not be a loop, as can be seen in the sur-
+face path generated by the medial boundary of the smaller sheet.
+If a medial boundary path is a loop, the corresponding path on the
+surface mesh will also be a loop, as can be seen in the surface path
+generated by boundary of the main medial sheet. (d) For medial
+singular paths, in contrast, a medial path that is an interval can cor-
+respond to a surface path that is a loop, as can be seen in the path
+on the surface mesh that corresponds to the closed black medial
+singular path.
+separating two sheets to a closed path on the shape surface that303
+delineates the coherent surface region associated to that sheet. In304
+Figure 4, consider the upper part of the object where there is a305
+small medial sheet connected to the larger one. The small sheet306
+corresponds to a small portion of the surface of the object that is307
+surrounded by the dashed black loop induced by the black singu-308
+lar path at the base of the medial sheet. Repeating this analysis for309
+each sheet in a medial axis produces a segmentation of the shape310
+boundary where shape segments are bounded by surface loops in-311
+duced by singular paths in the medial axis. This will be important in312
+Section 4 where we determine whether or not to compute a sheet in313
+the medial axis by evaluating the contribution of the corresponding314
+shape segment to the overall shape.315
+3.3. Local structures of the discrete skeleton316
+The global structures described in the previous section can be317
+formed by aggregation of the appropriate local structures. Philo-318
+sophically, the aggregation is straightforward – join connected sets319
+of points that are regular, or singular, or boundary – but many lo-320
+cal degeneracies arise in practice (some of which are collected in321
+Appendix A) that make the process challenging. We now deﬁne the322
+local structures that will allow us to generate global structures.323
+3.3.1. Voronoi and Delaunay duality between the skeleton and324
+the surface mesh325
+Based on a Delaunay triangulation of a surface mesh S, we con-326
+struct the Delaunay tetrahedralization T of the volume of the inte-327
+rior of S. T is the dual of the V oronoi diagramV of the vertices of328
+S. Each of S, M, T , and V have vertices, edges, and faces, and T329
+also has tetrahedra.330
+All vertices of T are vertices of the surface mesh. Note that while331
+all edges and faces of S belong to the Delaunay tetrahedralization332
+T , only a subset of edges and faces of T belong to S. Because of333
+the number of types of collections of vertices, edges, and faces,334
+we specify vocabulary and color-code mesh elements consistently335
+in the text and ﬁgures to distinguish between them. All vertices,336
+edges, faces (triangles in the general setting), and volumes (tetra-337
+hedra in the general setting) belonging to the Delaunay tetrahedral-338
+ization are colored in red. We identify the edges and faces that cross339
+the volume of the interior of S by appending the word volumetric.340
+The faces of the Delaunay tetrahedralization that are also faces of341
+the surface S are colored in green and carry the word surface.342
+Similarly for V , almost all vertices interior to S belong to the me-343
+dial mesh M [DZ03], while only a subset of the edges and faces344
+of V are contained in M. The elements in the V oronoi diagram V345
+are colored in dark blue except for the subset of the elements that346
+belong to the medial axis M, which are lighter blue. We refer to347
+the faces of V as Voronoi facesto emphasize that they are not typi-348
+cally triangular. Identifying the faces, edges, and vertices of V that349
+are completely inside the volume bounded by S deﬁnes the interior350
+discrete medial axis that is our primary object of study. Note that351
+there are also V oronoi vertices, edges, and faces that are completely352
+outside the volume bounded by S. These deﬁne an exterior medial353
+skeleton that we do not study here.354
+Figure 5: Difference between volumetric and surface tetrahedral
+components. Surface edges and faces (green) lie on the mesh of the
+object, while volumetric edges and faces (red) cross the volume of
+the object. The shapes of the drawn tetrahedra refer to Figure 3.
+We illustrate the local constructions more precisely next, empha-355
+sizing the duality between them: the Delaunay tetrahedralization356
+
+===== PAGE 7 / 17 =====
+
+6 Durix et al. / A clean, robust 3D medial axis
+T , which is primal, creates connectivity between surface vertices357
+through the shape interior. In the typical case, this generates:358
+• edges, joining two surface points, that may be a surface edge359
+(Figures 5 and 3, plain green edges), or volumetric edges (Fig-360
+ures 5 and 3, dashed red edges);361
+• triangles, joining three surface points, that may be a surface tri-362
+angle in which case, its three edges are also surface edges (Fig-363
+ures 5 and 3, green triangles), or a volumetric triangle (Figures 5364
+and 3, red triangles);365
+• tetrahedron, joining four surface points that are volumetric, since366
+we consider only the interior Delaunay tetrahedra (Figures 5, red367
+tetrahedra).368
+These primal elements have corresponding dual elements in V :369
+• tetrahedra correspond to V oronoi vertices which are centers of370
+the circumspheres of the tetrahedra;371
+• tetrahedral faces correspond to V oronoi edges;372
+• tetrahedral edges correspond to V oronoi faces. Note that a me-373
+dial face, and more generally a V oronoi face, is a planar polygon374
+since it lies on the medial plane of the dual edge and can have an375
+arbitrary number of nodes.376
+• medial vertices are a subset of V oronoi vertices and we denote377
+them as nodes;378
+• medial edges are a subset of V oronoi edges;379
+• medial faces are a subset of V oronoi faces.380
+We construct our simpliﬁed medial axis by exploring the V oronoi381
+diagram to determine which elements to include in the medial axis,382
+and then computing the medial axis components according to their383
+importance to the overall shape as measured by the Hausdorff dis-384
+tance between the original corresponding surface points and the385
+simpliﬁed version. The process requires both local and global con-386
+siderations of both primal and dual components.387
+Around a given medial edge, there can be as many V oronoi faces388
+as there are Delaunay edges (including volumetric edges and sur-389
+face edges) around the associated Delaunay face. This means that390
+edges are not necessarily surrounded by 3 V oronoi faces. A V oronoi391
+face dual to a Delaunay edge that belongs to the surface, that is, dual392
+to a surface edge, is called an open Voronoi face, cf. Figure 6. An393
+open V oronoi face contains a node that is outside the shape bound-394
+ary. This type of V oronoi face does not belong to the skeleton of395
+the medial axis, because it is not entirely contained in the interior396
+S. This allows us to ﬁlter out V oronoi face that are not part of the397
+interior medial axis.398
+Using the same idea, an open edge is associated to a Delaunay399
+face that belongs to the surface mesh. For this type of edge, one400
+of its extremities is a V oronoi nodes on the inner medial axis, and401
+the other one is a V oronoi vertex on the outer medial axis. Like the402
+open V oronoi face, the open edge therefore crosses the surface S.403
+Naturally, an open V oronoi face contains at least one open edge.404
+These edges do not belong to the medial mesh.405
+3.3.2. Oriented medial edges and faces406
+As discussed in Section 3.2, medial sheets comprising the skele-407
+ton have two sides; each side corresponds to a region of the shape408
+surface that is either “above" or “below." This two-sidedness also409
+Figure 6: Illustration of the relationship between skeleton and sur-
+face components. An open skeletal edge (dashed blue) is associated
+to its dual, a surface mesh face (green triangle). An open face, con-
+taining open edges is associated to its dual, a surface mesh edge
+(green). This kind of face contains edges that lie on both the inter-
+nal and the external skeletons. A Delaunay triangle (red) is asso-
+ciated to its dual, a skeletal edge (black), and each of its crossing
+edges (dashed red) is associated to its dual, a skeletal face.
+applies to our local structures, producing two-sided edges and two-410
+sided face that we denote by half edges and half facets, as in411
+[DRJ15]. As shown in Figure 7, on a degree 3 edge, three face412
+are connected, which gives six half facet. In total, six half edges are413
+derived from a degree 3 edge, one for each half facet. For example,414
+viewing a singular path as composed of a succession of half edges415
+will result in a path that lies on a single side of a sheet.416
+We distinguish between the edges that are above and those be-417
+low by deﬁning two half edges for each edge in the medial mesh.418
+These half edges will have orientations, moving in sequential or-419
+der around an medial face. The half edges are in counter-clockwise420
+order around the medial face, with respect to its normal vector. As421
+there are two possibilities for the normal orientation, there are two422
+sets of half edges, which are associated to the two sides of the me-423
+dial face. A half medial face consists of all the half edges that are on424
+the same side. Using the resulting graph structure to represent the425
+skeleton, we can easily navigate between the medial faces, edges426
+and vertices and their corresponding surface regions from the con-427
+nectivity information, and we can resolve ambiguities about neigh-428
+boring medial faces, since a neighbor must be on the same side of429
+the medial mesh.430
+3.4. Building global from local431
+We now aggregate the local structures described in Section 3.3 into432
+the global medial structures described in 3.1. In other words, we433
+determine medial sheets and identify which of its nodes and edges434
+are regular, singular, or belonging to the sheet boundary.435
+Each sheet is a subset of the medial faces of the skeleton. Two436
+medial faces are on the same sheet if there exists a path of medial437
+faces between them such that any two successive medial faces are438
+separated by a regular edge. Collecting all medial faces contained439
+in the same sheet produces the mesh for that sheet.440
+It remains to determine the regularity or singularity of the nodes441
+
+===== PAGE 8 / 17 =====
+
+Durix et al. / A clean, robust 3D medial axis 7
+Figure 7: Representation of the half edges around a (black) singular
+medial edge, from different views (up left, up right, below). Around
+this degree 3 edge, there are 6 half edges represented by the black
+arrows. Each pair of (black arrows) half edges represents a different
+area on the surface mesh.
+and edges within a (non-oriented) sheet. Recall that the degree of an442
+edge is deﬁned by the number of medial faces containing the edge.443
+A singular edge is then an edge of degree 3 or more, a boundary444
+edge is an edge of degree 1, and a regular edge is an edge of degree445
+2. These edges may belong to multiple sheets.446
+We now consider the half edges and how they compose paths447
+on a sheet ( cf. Figure 8). Since each half edge is associated to a448
+half medial face, each of them will be associated to a unique sheet.449
+Note that an open path of full medial edges corresponds to a closed450
+path of half edges: one traversal of successive edges on one side of451
+the sheet and another traversal of the same edges on the other side452
+but with the opposite orientation. We say that two half edges are453
+successive if they respect the following conditions:454
+• The last node of one half edge is the ﬁrst node of the other,455
+• Their associated half medial faces are neighbors (or are the456
+same).457
+A half singular path , or singular path (as every path in what458
+follows will now be half edges) is deﬁned by a set of successive459
+half singular edges (degree 3 or more). As there are opposite half460
+edges for each edge on an medial face, each singular path can be461
+associated to an opposite singular path (cf. Figure 8).462
+Finally, a boundary path is a set of successive half boundary463
+edges. As there are two half boundary edges for each boundary464
+Figure 8: A path on the skeleton is a sequence of half edges. Here,
+we can see two sides of the same skeleton, where two paths are
+drawn (yellow and purple), representing the same (black) singular
+edges. By construction of half edges, these paths have opposite di-
+rection. Note that green and purple half paths do not lie on the same
+medial faces, and therefore are not on the same sheet.
+edge on an medial face, a boundary path will be traced out twice by465
+half paths, one on each side of the sheet.466
+In the following, we consider a speciﬁc subset of boundary and467
+singular paths, such that all the half edges composing them are on468
+the same sheet. In the case of the boundary path, it will help to sim-469
+plify the boundary of a single sheet, and in the case of the singular470
+path, it will separate a given sheet from other sheets.471
+3.4.1. Medial mesh and surface mesh correspondence472
+Given the global structures on the medial axis, we can recover the473
+corresponding regions on the surface mesh (cf. Figure 9). Each se-474
+quence of half edges on the skeleton corresponds to a path on the475
+surface mesh as follows: each half edge is associated to a half me-476
+dial face on one side of the skeleton, and therefore determines one477
+vertex of the surface mesh (the center of the unique V oronoi cell on478
+which the half medial face lies). Therefore, the sequence of medial479
+faces associated to the sequence of half edges gives us a sequence480
+of vertices on the surface mesh. Indeed, if two medial faces are481
+neighbors, the associated surface vertices are on the same Delau-482
+nay triangle. As they are on the same side by construction of the483
+path, they necessarily are neighbors.484
+When this sequence of half edges corresponds to tracing out a485
+half path loop along the entirety of a singular path, it generates486
+a closed path on the surface mesh that distinguishes the surface487
+region corresponding to the current sheet from the rest of the the488
+shape surface.489
+While we primarily consider the paths on the surface mesh in-490
+duced by singular skeletal paths, note that any skeletal path can be491
+associated to a path on the surface mesh. For example, a boundary492
+skeletal path, as it is two-sided, induces two closed paths on the sur-493
+face mesh: each vertex and face between those paths is associated494
+to a boundary skeletal node.495
+3.5. Evaluation of the signiﬁcance of new sheets496
+Once a sheet has been computed, its singular edges are used to497
+detect the singular paths that separate the current sheet from its498
+
+===== PAGE 9 / 17 =====
+
+8 Durix et al. / A clean, robust 3D medial axis
+Figure 9: A (black) singular path on the skeleton associated to a
+(black) surface mesh path, whose vertices are the centers of the ﬁve
+V oronoi cells the path is crossing (as each medial face is separating
+two V oronoi cells). The computed surface path surrounds a surface
+portion for which we can evaluate an ε-signiﬁcance.
+neighbor sheets. Suppose we are given a tolerance parameterε. We499
+only wish to compute those neighbor sheets that correspond to a500
+surface region, as described in 3.4.1, that has signiﬁcance greater501
+than ε, where signiﬁcance is measured by Hausdorff distance to the502
+original surface.503
+Consider a singular path contained within a computed sheet. The504
+singular path corresponds both to a set of medial spheres centered505
+at its nodes, and also to the corresponding surface region for the506
+neighbor sheet whose signiﬁcance we wish to determine. If the507
+Hausdorff distance between the vertices of the surface region and508
+the medial spheres is greater thanε, the neighbor sheet is computed.509
+Otherwise, the sheet may be ignored: this means that the surface re-510
+gion is entirely covered by existing spheres of the skeleton, with a511
+radius increased by ε (cf. Figure 10).512
+Figure 10: Illustration of the ε criterion. A tetrahedron corresponds
+to a unique medial ball, passing through its four vertices. Adding ε
+to the radius of the ball, we obtain a new (dashed) sphere, covering
+other vertices of the surface mesh.
+4. Computing a topologically coherent and simpliﬁed skeleton513
+representing an ε-approximation of the surface mesh514
+We now describe how to compute a simpliﬁed skeleton from an515
+input surface mesh. Using the structures developed in the previous516
+sections, we compute a provably, topologically coherent skeletal517
+structure sheet by sheet and check if each sheet is signiﬁcant for518
+representing an ε approximation of the original shape in terms of519
+the Hausdorff distance. As input, this method assumes a Delaunay520
+triangular mesh (cf. 4.1). The pseudocode of the algorithm is given521
+in Algorithm 1.522
+ALGORITHM 1: Skeletonization.
+Input : M: Delaunay mesh
+Input : ε: Hausdorff distance parameter
+Output: S: Simpliﬁed skeleton
+Let Mw be a working copy of M
+Compute Delaunay tetrahedralization of Mw
+Estimate a ﬁrst medial faceF of the skeleton
+Compute full sheet S containing F
+Let ls be the list of degree 3 half edges on S
+while ls not empty do
+E = pop_ f ront(ls)
+Eext = half edge neighboring E, on neighbor sheet
+P = singular path containing Eext, on neighbor sheet
+C = set of faces on Mw covered by neighbor sheet
+d = maximal distance between skeletal spheres on P and mesh
+vertices on C
+if d < ε then
+Remove faces C from Mw
+D = set of internal Delaunay faces closing the hole
+Add faces D to Mw
+else
+Compute neighbor sheet Si
+Add list of degree 3 half edges on Si to ls
+end
+end
+Let lb be the list of degree 1 half edges on skeleton
+while lb not empty do
+E = steepest half edge of lb
+F = set of medial faces containing E and En
+P = singular path separating F from the computed skeleton
+C = set of faces on Mw covered by the sheet beyond P
+d = distance between skeletal spheres on P and mesh vertices
+on C
+if d < ε then
+Remove faces C from Mw
+D = set of internal Delaunay faces closing the hole
+Add faces D to Mw
+end
+Let lp be the list of problematic half edges on skeleton
+while lp not empty do
+E = pop_ f ront(lp)
+P = problematic path containing E
+F = set of medial faces separated by P
+Set edges of P singular
+Assign new label to faces of F
+end
+The algorithm proceeds through all sheets in the medial axis of523
+the input mesh, computing those with signiﬁcance above the thresh-524
+old ε. We summmarize the pipeline here, then detail each step in the525
+
+===== PAGE 10 / 17 =====
+
+Durix et al. / A clean, robust 3D medial axis 9
+paragraphs that follow. To begin, we compute a ﬁrst sheet, starting526
+from a ﬁrst medial face (cf. 4.2) and aggregating neighboring me-527
+dial faces into a complete sheet (cf. 4.3). Each singular medial edge528
+is attached to a new sheet. We compute the singular path connecting529
+this sheet (cf. 4.4) and determine if the signiﬁcance if the sheet is530
+greater than ε (cf. 3.5). If not, we discard the skeleton propagation531
+to the insigniﬁcant sheet. If the sheet is relevant, we allow the prop-532
+agation to compute the sheet. Repeating this operation over each533
+half singular path linking a sheet will produce the full skeleton of534
+ε-signiﬁcant sheets. We then simplify the skeleton boundaries ac-535
+cording to the same ε criterion, removing medial faces when pos-536
+sible ( cf. 4.6). This step highly simpliﬁes the resulting skeleton,537
+removing small peaks along sheet boundaries. Finally, we ensure538
+the sheet is manifold, removing problematic paths that create de-539
+generate geometry (cf. 4.7).540
+4.1. Input mesh541
+The input of this algorithm is a Delaunay triangular mesh bounding542
+a 3D shape. Each triangle of such a mesh is on a Delaunay tetra-543
+hedron: thus a Delaunay tetrahedron is either inside or outside the544
+shape. As a consequence, we know which portion of the skeleton545
+is inside, and which is outside, offering a clear labeling of outside546
+and inside skeleton. Furthermore, because the mesh is Delaunay,547
+a direct connection exists between the connectivity of the skeleton548
+and the connectivity of the surface mesh, and between the topology549
+of the skeleton and the topology of the surface mesh.550
+A Delaunay triangular mesh can be built from a given manifold551
+surface mesh (cf. [DZM07]), using edges ﬂipping and splitting. The552
+vertices of the original mesh are preserved in the Delaunay mesh,553
+and the skeletal structure we compute can still be applied to the554
+non-Delaunay version of a mesh, though the duality will not be555
+preserved. We also note that, since the atomic operations applied to556
+convert a mesh into a Delaunay mesh do not affect the topology of557
+the mesh, topology is preserved between original mesh and Delau-558
+nay mesh, and therefore maintains consistency with the skeleton.559
+4.2. Computing the ﬁrst medial face560
+The algorithm starts with an initial medial face of the skeleton. We561
+ﬁrst choose a node of the skeleton. This node will likely belong to562
+multiple medial faces, and we select one.563
+To compute the ﬁrst node on the skeleton, we need to ﬁnd an564
+internal, or volumetric, tetrahedron. We select an arbitrary triangle565
+of the surface mesh. As the mesh itself is a subset of the Delaunay566
+tetrahedralization, this triangle is necessarily a face of a tetrahe-567
+dron. Once this triangle is chosen, two tetrahedra are candidates to568
+be our ﬁrst tetrahedron: one interior and one exterior to the shape569
+volume. Using the orientation of the mesh surface, we can deter-570
+mine which one is interior, which gives us a ﬁrst interior medial571
+node. Finally, to avoid choosing a ﬁrst medial node that is not sig-572
+niﬁcant, we detect the neighboring node with a maximal radius (as573
+each interior tetrahedron corresponds to a medial sphere), and it-574
+erate this operation so that that chosen initial node has a locally575
+maximal radius.576
+Finally, the ﬁrst medial face is randomly chosen from the medial577
+faces surrounding the chosen node. More precisely, as an medial578
+face is the dual of a volumetric edge, we choose one volumetric579
+edge among the edges of the chosen interior tetrahedron which de-580
+termines an medial face.581
+4.3. Single sheet propagation582
+We will assign a label to each skeletal sheet. To compute a sheet, we583
+start from a ﬁrst medial face, which we label. We then add all the584
+neighbor medial faces sharing a regular edge in a propagation pro-585
+cess, and assign the same label to them. We repeat the propagation586
+for each added face, labeling the medial faces until no neighboring587
+unlabelled medial faces sharing a regular edge remain. This pro-588
+cess ends because the boundaries of sheets consist of singular or589
+boundary edges which are not regular edges, and a medial sheet for590
+a ﬁnite volume discrete surface mesh will have a ﬁnite number of591
+medial faces.592
+4.4. Singular paths computation593
+For each half singular edge on the boundary of the processed me-594
+dial sheet, a half singular edge on a neighbor sheet can be identiﬁed.595
+From this neighbor half singular edge, a half singular path can be596
+estimated, which is associated to the neighbor sheet. (As described597
+in Section 3.4, a half singular path in a sheet is a set of successive598
+half singular edges belonging to the same sheet.) Recall that a full599
+singular path corresponds to a closed loop of half singular edges600
+that trace out the full path twice but in opposite directions (see e.g.601
+Figure 8).602
+We start from a half singular edge to form the candidate list ls603
+and identify a neighboring half singular edge ( cf. Figure 11) using604
+Algorithm 2. We iterate until the loop of half edges closes, and605
+returns the complete singular path. We then remove every used half606
+edge from the candidate list ls.607
+ALGORITHM 2: Computing next half singular edge.
+Input : Half singular edge pe
+Output: Next half singular edge pe′
+pe′ = pe
+do
+Find pe f , next half edge on same medial face than pe′
+Find peo, opposite half edge of pe f , on the neighbor half
+medial face
+Find pe′, next half edge on same medial face than peo
+while pe′ is not singular;
+The result of this operation is sequence of half edges, called a608
+singular path. A given singular path can be tested to identify in-609
+signiﬁcant sheets, according toε parameter.610
+4.5. Identifying an insigniﬁcant sheet beyond a singular path611
+If a singular path separates the current sheet from a sheet that has612
+been determined to be insigniﬁcant according to the ε criterion,613
+we do not compute that sheet. In order to maintain the geometric614
+relationship between the skeleton and the mesh, we also update615
+the connectivity of the mesh when we do not compute a sheet ( cf.616
+Figure 12).617
+
+===== PAGE 11 / 17 =====
+
+10 Durix et al. / A clean, robust 3D medial axis
+a
+bc
+d
+e
+f
+g
+h
+i
+Figure 11: Identifying the next half edge to compute a singular path
+(here (a,d,i) ). The singular edges are in black. Two examples are
+shown here. From a to d, we ﬁrst take the next edge on the same
+half medial face, b, then take the opposite edge to b, c. Finally,
+we take the next edge to c, which is the singular edge d. More
+generally, to go from d to i, the same steps are repeated on each
+medial face until a singular half edge is found. Here, it is done
+twice: through half edges e, f and g, h. At this point, the singular
+path is composed by a, d and i. During this process, each visited
+half medial face belongs to a unique V oronoi cell with associated
+dual (green) boundary point. Each new point is stored as the next
+vertex of the path. When the path closes, the result is a sequence of
+(green) vertices creating a closed path on the boundary.
+The main step in not computing a sheet is removing any interior618
+tetrahedra from the object volume. This implies removing some619
+vertices, namely vertices strictly within the region bounded by the620
+corresponding surface path, and remeshing this portion of the sur-621
+face, creating a new set of edges and faces to ﬁll the hole.622
+4.6. Simplifying boundaries623
+Boundary paths for sheets are prone to noise. Using the sameε sig-624
+niﬁcance measure, we simplify sheet boundaries by removing some625
+medial faces. We deﬁne the notion of steepness of a consecutive626
+pair of half boundary edges to be the angle between them. At each627
+step of the simpliﬁcation (cf. Algorithm 1), we check the steepest628
+consecutive half edges along the boundaries. We then compute the629
+singular path separating those medial faces from the skeleton, and630
+use it to check whether the sheet beyond the path can be removed631
+using the ε criterion. If so, we remove the medial faces using same632
+method as in 4.5.633
+4.7. Handling problematic paths634
+A computed sheet may contain some non-manifold edges. This635
+happens when skeletal edges are connected to three medial faces636
+that are labeled as belonging to the same sheet, violating the ge-637
+ometry of regular edges contained in a sheet interior. We ﬁrst label638
+these edges problematic edges, that is, any edge belonging to three639
+different medial faces but labeled as members of the same sheet640
+(see Figure 13). To resolve the problematic edges, we wish to create641
+(a) Path detection
+ (b) Modify the mesh to ignore a
+sheet
+Figure 12: Singular path detection and ignoring a sheet. Here, to ig-
+nore the sheet, two edges, then three faces, are created on the mesh.
+The mesh vertices inside the region are removed from the mesh.
+To ignore the sheet, the mesh vertices within the closed boundary
+path are removed from the mesh and the corresponding region is
+re-triangulated. Note that that singular edges bordering the medial
+path have become regular.
+a new sheet, distinct from the current sheet, as shown in Figure 13.642
+To determine the boundaries of the new sheet, we resolve a prob-643
+lematic path by joining problematic edges together with selected644
+regular edges to border and be part of a new sheet’s singular set.645
+We then select the medial faces separated off by this path and cre-646
+ate the new sheet by labeling them with a new label, as described647
+in Algorithm 3. Splitting the new sheet from the original sheet re-648
+solves the problematic edges.649
+ALGORITHM 3: Correcting problematic edges.
+Input : Problematic half edge pe
+Output: Set of medial faces with new label
+Output: Set of degree 2 edges set as singular
+P = Path of problematic half edges containing pe
+N = Extremity of P non connected directly to a boundary edge
+S = Path of regular edges starting from N to boundary nodes of
+skeleton
+Set S edges singular
+F = Separated skeletal faces
+Assign new label to faces of F
+5. Results650
+To evaluate our methods, we apply them to 3D models from two651
+popular databases using our implementation in Rust ( https://652
+github.com/Ibujah/compact-skel-3d):653
+• The McGill database [SZM ∗08], which aggregates different654
+classical databases, such as Princeton’s, and the authors own655
+models (http://www.cim.mcgill.ca/~shape/benchMark/).656
+• The Lavoué database [LCSL18]( https://perso.liris.657
+cnrs.fr/guillaume.lavoue/data/saliency/).658
+We require manifold meshes, and so all non-manifold mesh are dis-659
+carded. Moreover, our algorithm assumes that we have Delaunay660
+
+===== PAGE 12 / 17 =====
+
+Durix et al. / A clean, robust 3D medial axis 11
+(a) A continuous path containing problematic edges
+(b) Adding artiﬁcial singular edges (dashed black) separates the
+sheet in two parts and reformulates the problematic edges
+Figure 13: An example of problematic edges, and their resolution.
+A problematic edge belongs to three medial faces belonging to
+the same sheet. Note that in (a), all medial faces belong to the
+same sheet even though there are some faces connected by singu-
+lar edges. In (a), the black edges are problematic because they are
+not cleanly separating two sheets. This situation cannot be char-
+acterized locally, but requires the full computation of the sheet to
+detect. Our solution is to relabel appropriate regular edges as singu-
+lar edges (new edge in dashed black in the bottom ﬁgure) in order
+to split the affected medial faces into two separate sheets. In (b),
+the medial faces surrounded by the yellow edges now belong to a
+separate sheet. This means that singular edges (black edges in the
+bottom ﬁgure) now belong to at most two medial faces belonging
+to the same sheet.
+meshes. Some meshes of these two databases are not Delaunay,661
+and so we apply Dyer’s algorithm [DZM07] to convert them to De-662
+launay.663
+In total, we have tested our algorithm on 411 models (in sup-664
+plementary material), with meshes with between 3000 and 30,000665
+vertices in the McGill database, and around 20,000 vertices in the666
+Lavoué database. Skeletonization takes in average less than one667
+minute per mesh, depending on the complexity of the given model.668
+Some examples are shown on Figure 14. For these examples,669
+we set ε as 1% of the bounding box diagonal. Our algorithm can670
+accept Delaunay meshes of arbitrary genus. As shown in Figure671
+14, our algorithm separates the skeleton into different sheets which672
+are highlighted (right side of ﬁgure), and these sheets correspond673
+to surface mesh regions (left side of ﬁgure). The structure of the674
+skeleton is then easily accessible and usable.675
+In Figure 18, we compare our approach to V oxel Core [YLJ18]676
+Figure 14: Skeletons computed with our algorithm, with ε = 0.01.
+To highlight the link between skeletal sheets and mesh portions,
+we use the same color for a skeletal sheet (right) and its associated
+mesh portion (left).
+and Scale Axis Transform (SAT) [MGP10]. Our method consis-677
+tently retains salient shape features across different types of shape678
+conﬁgurations, unlike the other two, while maintaining a similar679
+level of cleanliness. For example, SAT erodes important regions of680
+the body of the bunny. Similarly, V oxel Core erodes important re-681
+gions of the tool (bottom left) and the head and the wings of the682
+dragon, as well as legs of the chair. This is because our method683
+explicitly preserves ε-ﬁdelity with the input surface vertices while684
+simultaneously seeking geometric coherence. In other words, we685
+have the additional advantage that we maintain geometric consis-686
+tency with the surface mesh.687
+In Figure 15, we show skeletons of the same object computed688
+with different values of ε. As ε increases from 0 .00, to 0 .01, and689
+
+===== PAGE 13 / 17 =====
+
+12 Durix et al. / A clean, robust 3D medial axis
+to 0.05, successive sheets are removed, but we can see a larger dif-690
+ference between 0 .00 and 0 .01 than between 0 .01 and 0 .05. This691
+may suggest that each input shape has an intrinsically appropriate692
+ε value.693
+Figure 16 shows skeleton computed with ε = 0. These skeletons694
+have many spurious peaks.695
+Figure 17 shows effects of noise in the input surface mesh. We696
+observe that even if more skeletal peaks are present on the thin697
+parts, the global skeleton stays clean.698
+6. Conclusion699
+In this article, we present a 3D skeletonization approach to produce700
+a simpliﬁed and geometrically consistent medial axis. Our algo-701
+rithm identiﬁes the primary structures in the medial skeleton, which702
+are medial sheets and curves, and their boundaries, which are singu-703
+lar or boundary structures. These structures are topologically valid,704
+manifold, and cleanly separated, thereby maintaining the Whitney705
+stratiﬁed structure of the Blum medial axis in the discrete set-706
+ting. Furthermore, we maintain the relationship between the sur-707
+face mesh and the medial axis by associating nodes, edges, and708
+medial faces of the skeleton with tetrahedra, triangles and edges of709
+the Delaunay structure generated by the surface mesh points.710
+Using these medial structures, we compute a simpliﬁed skeleton,711
+excluding insigniﬁcant sheets. Using the geometric links between712
+the mesh and the skeleton, we evaluate the relevance of a skeletal713
+sheet by evaluating the deviation from the surface mesh that would714
+result from removing the surface region associated to that sheet. As715
+a result, we do not compute insigniﬁcant sheets for which the Haus-716
+dorff distance of the points in the associated region of the surface717
+mesh to the remaining surface points is lower than an ε threshold.718
+Future work might explore the relationship between the noise719
+level of the surface mesh and optimal ε values for several distribu-720
+tions of noise. Additionally, exploring preprocessing approaches to721
+allow for more general formats for surface data beyond Delaunay722
+meshes would be useful.723
+(a) ε = 0
+ (b) ε = 0.01
+ (c) ε = 0.05
+Figure 15: Comparison of the same skeleton with differentε values.
+Between 15a and 15b, we can see that most of the noisy peaks were
+removed. Few sheets were removed between 15b and 15c.
+Appendix A: Irregularities of the discrete skeleton724
+Generating the medial mesh from the V oronoi/Delaunay structures725
+of the surface mesh, even a nice one, can produce geometric irreg-726
+Figure 16: Computed skeleton without simpliﬁcation (ε = 0). Un-
+wanted peaks appear, including peaks going outside of the mesh.
+ularities. These can be classiﬁed into two different categories: nu-727
+merical problems, which come from the fact we manipulate ﬂoating728
+point numbers instead of real numbers, and discrete skeleton prob-729
+lems, which are problems arising from particular conﬁgurations of730
+the surface points, potentially breaking the properties of continuous731
+skeletons.732
+• There can be more than 4 mesh points on a particular sphere, and733
+more than 3 points on a Delaunay face. Tetrahedra and triangles734
+are the most frequent type of Delaunay polyhedra, but not the735
+only one. The Delaunay library we use, Tetgen [Si15] computes736
+only standard tetrahedra, which avoids the problem, but this can737
+result in ﬂat (very low volume) tetrahedra.738
+• More than three sheets can share the same singular set, which739
+means singular paths can lie on more than three sheets. There-740
+fore, when separating two sheets, several half singular paths can741
+be computed. When we test if a new sheet has to be computed,742
+we compute the half singular path which lies on the new sheet743
+(as explained in 4.4).744
+• Though it is rare, some “sheets" may be one-dimensional in cer-745
+tain places or in their entirety (for example, an arm that is a long746
+circular cylinder will have a curve as its skeleton). We handle747
+these cases separately: instead of propagating medial faces, we748
+compute successive degree 0 edges.749
+• Two singular paths can cross each other: this situation is not750
+generic behavior in the continuous setting, but can happen in the751
+discrete setting.752
+• Some medial nodes can be associated to a sphere outside the753
+mesh (cf. Figure 16). This is because, for some interior boundary754
+tetrahedra, the associated sphere center will be outside of the755
+mesh. This can happen due to overly coarse surface sampling or756
+to ﬂat tetrahedra. Our algorithm detects and removes these nodes757
+by removing the associated tetrahedra.758
+
+===== PAGE 14 / 17 =====
+
+Durix et al. / A clean, robust 3D medial axis 13
+(a) Skeleton and mesh without noise
+(b) Skeleton and mesh with noise
+Figure 17: Effect of the mesh noise on the skeleton (ε = 0.01).
+• As shown on Figure 13, some edges can be problematic, as they759
+separate three medial faces from the same sheet. This problem,760
+speciﬁc to the discrete case, is addressed in Section 4.7.761
+References762
+[ACK01] A MENTA N., C HOI S., K OLLURI R. K.: The power crust.763
+In ACM symposium on Solid modeling and applications (May 2001),764
+pp. 249–266. 1765
+[ADBS11] A RCELLI C., D I BAJA G. S., S ERINO L.: Distance-driven766
+skeletonization in voxel images. IEEE transactions on Pattern Analysis767
+and Machine Intelligence 33, 4 (2011), 709–720. 1768
+[AL01] A TTALI D., L ACHAUD J.-O.: Delaunay conforming iso-surface,769
+skeleton extraction and noise removal. Computational Geometry 19, 2-3770
+(2001), 175–189. 2771
+[ATC∗08] A U O. K.-C., T AI C.-L., C HU H.-K., C OHEN -O R D., L EE772
+T.-Y.: Skeleton extraction by mesh contraction. ACM Transactions on773
+Graphics 27, 3 (2008), 1–10. 2774
+[Blu73] B LUM H.: Biological shape and visual science. Journal of775
+theoretical Biology 38, 2 (1973), 205–287. 1776
+[BR21] B ÆRENTZEN A., R OTENBERG E.: Skeletonization via local sep-777
+arators. ACM Transactions on Graphics 40, 5 (2021), 1–18. 2778
+[CD23] C LÉMOT M., D IGNE J.: Neural skeleton: Implicit neural rep-779
+resentation away from the surface. Computers & Graphics 114 (2023),780
+368–378. 1781
+[CDE∗00] C HENG S.-W., D EY T. K., E DELSBRUNNER H., F ACELLO782
+M. A., T ENG S.-H.: Silver exudation. Journal of the ACM 47, 5 (Sept.783
+2000), 883–904. 4784
+[CSM07] C ORNEA N. D., S ILVER D., M IN P.: Curve-skeleton proper-785
+ties, applications, and algorithms. IEEE Transactions on visualization786
+and computer graphics 13, 3 (2007), 530. 2787
+[Dam05] D AMON J.: Determining the geometry of boundaries of objects788
+from medial data. International Journal of Computer Vision 63, 1 (June789
+2005), 45–64. 3790
+[DCL∗19] D URIX B., C HAMBON S., L EONARD K., M ARI J.-L.,791
+MORIN G.: The propagated skeleton: A robust detail-preserving ap-792
+proach. In International Conference on Discrete Geometry for Computer793
+Imagery (2019), pp. 343–354. 2794
+[DMC∗19] D URIX B., M ORIN G., C HAMBON S., M ARI J.-L.,795
+LEONARD K.: One-step compact skeletonization. In 40th796
+Annual Conference of the European Association for Computer797
+Graphics-Eurographics 2019 (2019), pp. 1–5. 2798
+[DRJ15] D YEDOV V., RAY N., J IAO X.: Ahf: array-based half-facet data799
+structure for mixed-dimensional and non-manifold meshes. Engineering800
+with Computers 31 (2015), 389–404. 6801
+[DS06] D EY T. K., S UN J.: Deﬁning and computing curve-skeletons802
+with medial geodesic function. In Proceedings of the Fourth803
+Eurographics Symposium on Geometry Processing (Goslar, DEU, 2006),804
+SGP ’06, Eurographics Association, p. 143–152. 2805
+[DZ03] D EY T. K., Z HAO W.: Approximating the medial axis from the806
+voronoi diagram with a convergence guarantee.Algorithmica 38, 1 (Oct.807
+2003), 179–200. 2, 3, 5808
+[DZM07] D YER R., Z HANG H., M ÖLLER T.: Delaunay mesh construc-809
+tion. In Eurographics Symposium on Geometry Processing 2007 (July810
+2007). 9, 11811
+[GK04] G IBLIN P., K IMIA B. B.: A formal classiﬁcation of 3d me-812
+dial axis points and their local geometry. IEEE transactions on Pattern813
+Analysis and Machine Intelligence 26, 2 (2004), 238–251. 3814
+[HR08] H ESSELINK W. H., R OERDINK J. B.: Euclidean skeletons of815
+digital image and volume data in linear time by the integer medial816
+axis transform. IEEE transactions on Pattern Analysis and Machine817
+Intelligence 30, 12 (2008), 2204–2217. 1818
+[JST15] J ALBA A. C., S OBIECKI A., T ELEA A. C.: An uniﬁed mul-819
+tiscale framework for planar, surface, and curve skeletonization. IEEE820
+transactions on pattern analysis and machine intelligence 38, 1 (2015),821
+30–45. 1822
+[LBKP21] L EE Y., BAEK J., K IM Y. M., PARK F. C.: Imat: The iterative823
+medial axis transform. In Computer Graphics Forum (2021), vol. 40,824
+Wiley Online Library, pp. 162–181. 1825
+[LCSL18] L AVOUÉ G., C ORDIER F., S EO H., L ARABI M.-C.: Vi-826
+sual attention for rendered 3d shapes. In Computer Graphics Forum827
+(Eurographics) (2018), vol. 37, pp. 191–203. 10828
+[LW18] L I L., WANG W.: Improved use of lop for curve skeleton extrac-829
+tion. In Computer Graphics Forum (2018), vol. 37, pp. 313–323. 2830
+[LWS∗15] L I P., WANG B., S UN F., GUO X., Z HANG C., WANG W.: Q-831
+mat: Computing medial axis transform by quadratic error minimization.832
+ACM Transactions on Graphics 35, 1 (2015), 1–16. 2833
+[MBC12] M A J., B AE S. W., C HOI S.: 3d medial axis point approxima-834
+tion using nearest neighbors and the normal ﬁeld. The Visual Computer835
+28, 1 (2012), 7–19. 1836
+[MGP10] M IKLOS B., G IESEN J., P AULY M.: Discrete Scale Axis837
+Representations for 3D Geometry. In ACM Special Interest Group on838
+Computer Graphics and Interactive Techniques Conference, SIGGRAPH839
+(2010), vol. 29, pp. 1–10. 2, 11840
+
+===== PAGE 15 / 17 =====
+
+14 Durix et al. / A clean, robust 3D medial axis
+[PWG∗19] P AN Y., WANG B., G UO X., Z ENG H., M A Y., WANG W.:841
+Q-mat+: An error-controllable and feature-sensitive simpliﬁcation algo-842
+rithm for medial axis transform. Computer Aided Geometric Design 71843
+(2019), 16–29. 2844
+[RA V∗19] R EBAIN D., A NGLES B., V ALENTIN J., V INING N.,845
+PEETHAMBARAN J., I ZADI S., TAGLIASACCHI A.: Lsmat least squares846
+medial axis transform. In Computer Graphics Forum (2019), vol. 38,847
+pp. 5–18. 1848
+[RLS∗21] R EBAIN D., L I K., S ITZMANN V., Y AZDANI S., Y I849
+K. M., T AGLIASACCHI A.: Deep medial ﬁelds. arXiv preprint850
+arXiv:2106.03804 (2021). 1851
+[Si15] S I H.: Tetgen, a delaunay-based quality tetrahedral mesh genera-852
+tor. ACM Transactions on Mathematical Software 41, 2 (2015). 12853
+[SPB96] S HERBROOKE E. C., P ATRIKALAKIS N. M., B RISSON E.: An854
+algorithm for the medial axis transform of 3d polyhedral solids. IEEE855
+transactions on visualization and computer graphics 2, 1 (1996), 44–61.856
+1857
+[SYJT13] S OBIECKI A., Y ASAN H. C., J ALBA A. C., T ELEA A. C.:858
+Qualitative comparison of contraction-based curve skeletonization meth-859
+ods. In International Symposium on Mathematical Morphology and Its860
+Applications to Signal and Image Processing (2013), pp. 425–439. 2861
+[SZM∗08] S IDDIQI K., Z HANG J., M ACRINI D., S HOKOUFANDEH A.,862
+BOUIX S., D ICKINSON S.: Retrieving articulated 3d models using me-863
+dial surfaces. Machine Vision Application 19, 4 (2008), 261–274. 10864
+[TAOZ12] T AGLIASACCHI A., A LHASHIM I., O LSON M., Z HANG H.:865
+Mean curvature skeletons. In Computer Graphics Forum (2012), vol. 31,866
+pp. 1735–1744. 2867
+[TDS∗16] T AGLIASACCHI A., D ELAME T., S PAGNUOLO M., A MENTA868
+N., T ELEA A.: 3D skeletons: A state-of-the-art report. In Computer869
+Graphics Forum (Eurographics) (2016), vol. 35, pp. 573–597. 1, 4870
+[YLJ18] Y AN Y., L ETSCHER D., J U T.: V oxel cores: Efﬁcient, robust,871
+and provably good approximation of 3d medial axes. ACM Transactions872
+on Graphics 37, 4 (2018), 1–13. 1, 11873
+[YSC∗16] Y AN Y., S YKES K., C HAMBERS E., L ETSCHER D., J U T.:874
+Erosion thickness on medial axes of 3d shapes. ACM Transactions on875
+Graphics 35, 1 (July 2016), 1–12. 2876
+[YYW∗20] Y ANG B., YAO J., WANG B., H U J., PAN Y., PAN T., WANG877
+W., G UO X.: P2mat-net: Learning medial axis transform from sparse878
+point clouds. Computer Aided Geometric Design 80 (2020), 101874. 1879
+[ZLZ20] Z HOU J., L IU J., Z HANG M.: Curve skeleton extraction via880
+k-nearest-neighbors based contraction. International Journal of Applied881
+Mathematics and Computer Science 30, 1 (2020). 2882
+
+===== PAGE 16 / 17 =====
+
+Durix et al. / A clean, robust 3D medial axis 15
+Propagated skeleton
+V oxel core
+SAT
+Propagated skeleton
+V oxel core
+Scale-axis-transform
+Figure 18: Comparison between our approach (ε = 0.01), voxelcore (λ = 0.04) and scale-axis-transform (s = 1.1). Because of the resolution
+of the image it seems that the skeleton disconnects but the topology of the skeleton is kept in all approaches.
+
+===== PAGE 17 / 17 =====
+
+16 Durix et al. / A clean, robust 3D medial axis
+Figure 19: Some skeletons computed by our method (ε = 0.01).

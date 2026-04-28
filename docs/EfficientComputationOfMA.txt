@@ -1,0 +1,1282 @@
+
+
+===== PAGE 1 / 12 =====
+
+Efﬁcient Computation of A SimpliﬁedMedial Axis
+Mark Foskey
+foskey@cs.unc.edu
+Department of Radiology
+Ming C. Lin
+lin@cs.unc.edu
+Department of Computer
+Science
+Dinesh Manocha
+dm@cs.unc.edu
+Department of Computer
+Science
+University of North Carolina at Chapel Hill
+http://www.cs.unc.edu/gamma/smx/
+ABSTRACT
+Applications of of the medial axis have been limited because
+of its instability and algebraic complexity. In this paper, we
+use a simplication of the medial axis, the -SMA, that is pa-
+rameterized by a separation angle () formed by the vectors
+connecting a point on the medial axis to the closest points
+on the boundary. We present a formal characterization of
+the degree of simplication of the -SMA as a function of ,
+and we quantify the degree to which the simplied medial
+axis retains the features of the original polyhedron.
+We present a fast algorithm to compute an approximation
+of the -SMA. It is based on a spatial subdivision scheme,
+and uses fast computation of a distance eld and its gradient
+using graphics hardware. The complexity of the algorithm
+varies based on the error threshold that is used, and is a
+linear function of the input size. We have applied this al-
+gorithm to approximate the SMA of models with tens or
+hundreds of thousands of triangles. Its running time varies
+from a few seconds, for a model consisting of hundreds of
+triangles, to minutes for highly complex models.
+Categories and Subject Descriptors
+I.3.5 [Computer Graphics]: Computational Geometry and
+Object Modeling|Curve, surface, solid, and object repre-
+sentations; I.4 [Image Processing and Computer Vi-
+sion]: Reconstruction, Image Representation
+General Terms
+Algorithms, Experimentation, Performance, Theory
+Keywords
+Distance eld, Medial axis
+1. INTRODUCTION
+The medial axis [5] of a solid, dened as the set of centers
+of maximal balls contained in the solid, has been proposed
+Permission to make digital or hard copies of all or part of this work for
+personal or classroom use is granted without fee provided that copies are
+not made or distributed for proﬁtor commercial advantage and that copies
+bear this notice and the full citation on the ﬁrstpage. To copy otherwise, to
+republish, to post on servers or to redistribute to lists, requires prior speciﬁc
+permission and/or a fee.
+SM'03 June 16-20, 2003 Seattle, Washington, USA
+Copyright 2003 ACM 1-58113-706-0/03/0006 ...$5.00.
+as a tool for shape analysis, surface reconstruction, motion
+planning, and many other applications. It is useful because
+it provides a local lower-dimensional characterization of the
+solid. In particular, for a solid in 3D the medial axis con-
+sists of a union of surfaces that provide information about
+the shape and topology of the solid. If the distance to the
+boundary is also stored for each medial axis point, the result-
+ing structure is known as the medial axis transform (MAT)
+and the entire boundary representation can be reconstructed
+from it.
+The use of the medial axis has been limited mainly by
+two signicant drawbacks: First, it is unstable, in that small
+deformations in the boundary of the solid can lead to large
+changes in the medial axis. Second, it is dicult to com-
+pute because of the underlying algebraic complexity. For
+a polyhedron, the surfaces constituting the medial axis are
+quadrics, and the seam curves can have degree four. For
+solids with curved boundaries, the medial axis sheets and
+seam curves can have much higher degree. Geometric com-
+putation with primitives of such high degree is hard to make
+both reliable and fast.
+In this paper, we investigate a subset of the medial axis,
+which we call the -simplied medial axis, or -SMA. The
+ refers to the angle formed by the vectors connecting a
+point on the medial axis to its corresponding closest points
+on the object boundary. We call this angle the separation
+angle, and the -SMA is simply the set of medial axis points
+for which the separation angle exceeds . The relationship
+between the stability of the medial axis and the separation
+angle has been known in the literature and used in many
+applications including surface reconstruction and skeleton-
+based modeling [1, 13, 26].
+Main Results: We present novel properties of the -
+SMA and a fast algorithm to compute an approximation
+of the -SMA of a complex polyhedron. The -SMA, as
+indicated above, is parameterized by a minimum separation
+angle . It has the property that Mi  Mj whenever i >
+j. Moreover, M more closely approximates the medial
+axis as  ! 0, and becomes more stable as  ! . We
+describe a formal characterization of the simplication of the
+medial axis as a function of . Given the distance function at
+each point on M, an approximation to the boundary of the
+original solid can be reconstructed, and we give a formula
+relating the tightness of this approximation to .
+We also present a novel and fast algorithm to compute an
+approximation to M at an adjustable resolution . The 
+determines the maximum error between the computed ap-
+
+===== PAGE 2 / 12 =====
+
+proximation and -SMA. It is based on ecient computation
+of a distance eld and its gradient using a spatial decompo-
+sition. The complexity of the resulting algorithm is (n=3)
+where n is the number of primitives in the model and  is the
+resolution (voxel width). We describe an adaptive subdivi-
+sion scheme for computing a bounded-error approximation.
+Moreover, we present a number of techniques to improve the
+quality of the approximation by smoothing operations and
+accelerate the performance of the overall algorithm.
+The algorithm has been implemented and applied to com-
+plex polyhedra composed of tens or hundreds of thousands
+of triangles. Its running time ranges from a few seconds, for
+a model composed of hundreds of triangles, to minutes for
+highly complex models, with measurements performed on a
+2 GHz PC with an nVidia GeForce 4 graphics card.
+As compared to other approximate schemes, our approach
+oers the following advantages:
+ Complex Models: It can handle very large and com-
+plex models as the running time is a linear function of
+the input size.
+ Eciency: We use fast algorithms for computing the
+distance eld and its gradient based on interpolation-
+based rasterization hardware. As a result, our algo-
+rithm can handle complex models composed of tens of
+thousands of polygons in a few minutes.
+ Approximation: The -approximation to the -SMA
+is everywhere within
+p
+3=2  of the medial axis, and it
+converges to the true -SMA as  ! 0.
+ Stability: The criterion for simplication is scale-
+invariant, so that small shallow bulges are ignored, but
+thin, extended features in the medial axis are repre-
+sented.
+ Simplication: The simplication criterion is rather
+intuitive, depending only on the separation angle.
+The rest of the paper is organized as follows. In Section 2
+we give an overview of related work. In Section 3 we de-
+ne M and present some of its properties. In Section 4 we
+present our algorithm, and in Section 5 we analyze the time
+complexity of our algorithms and various sources of error in
+the approximation. We describe our implementation in Sec-
+tion 6 and highlight its performance on a number of complex
+models. In Section 7 we compare our approach to others in
+the literature, and we conclude in Section 8.
+2. RELATED WORK
+There is an extensive literature on both the computation
+and the simplication of the MAT and related construc-
+tions. In this section, we give a brief overview of exact and
+approximate algorithms for MAT computation as well as
+simplication.
+2.1 Medial Axis Computation
+At a broad level, algorithms for medial-axis computa-
+tion can be classied into four categories: thinning algo-
+rithms, distance eld based algorithms, algebraic methods,
+and surface-sampling approaches. These categories dier in
+terms of the underlying representations used for the medial-
+axis as well as how they compute it.
+2.1.1 Thinning Algorithms
+Thinning algorithms use a voxel-based representation of
+the initial gure, and perform erosion operations to arrive at
+a set of voxels approximating the medial axis. Lam et al. [19]
+give a survey of these approaches, and Zhang et al. [32]
+compare various methods. These methods are signicant in
+the areas of image processing and pattern recognition, since
+the input data is represented as a discrete grid.
+2.1.2 Distance Field Computations
+Many approaches compute an approximation of the me-
+dial axis based on distance elds. Danielsson [12] uses a
+scanning approach in 2D to create an image in which each
+pixel contains the Euclidean distance to the nearest pixel
+on the boundary of the gure being analyzed. Moreover,
+the resulting distance map can be analyzed for local direc-
+tional maxima to get an approximation of the medial axis.
+This algorithm has also been extended to three and higher
+dimensions [22].
+Vleugels and Overmars [30] use a spatial subdivision to
+represent the medial axis, relying on nearest-neighbor queries
+to determine whether a cell must be further subdivided.
+They subdivide if the cell has vertices in dierent Voronoi
+regions and is larger than a certain threshold.
+Ho et al. [17] use interpolation-based graphics hardware
+to render a polygonal approximation of the distance eld.
+The distance eld is created in the depth buer. We have
+extended this algorithm to compute the gradient of the dis-
+tance eld, also using rasterization hardware. We then use
+the gradient eld for fast computation of the medial axis.
+Siddiqi et al. [25] have also presented an approximate al-
+gorithm based on distance elds. Their analysis is based on
+a dierential equation simulating the inward progress of a
+front starting at the boundary of the object. They compute
+a vector eld that, at every point p, is equal to the vector
+from the nearest point on the surface, to p. They consider a
+point to be on the medial axis if the mean ux of the vector
+eld, entering a neighborhood of the point, is positive.
+2.1.3 Algebraic Methods
+There is a family of methods that rely fundamentally on
+the fact that the algebraic form is explicitly known for each
+surface patch (i.e., each sheet) of the medial axis of a poly-
+hedron.
+Etzion and Rappoport [16] represent the curves and sur-
+faces symbolically, but use a spatial subdivision to resolve
+the connectivity of the curves. They use algebraic tests to
+determine whether the surfaces pass into the cells of the
+subdivision, and subdivide until either the proper connec-
+tivity is determined, or a minimum cell size is reached. The
+presence of a minimum cell size means that it is not always
+possible to fully resolve the local connectivity of sheets and
+seams.
+Most algorithms that represent the medial axis symboli-
+cally use a tracing approach [21]. Starting from a junction
+point on the medial axis, a seam emanating from the junc-
+tion is followed. The seam terminates at another junction
+and the process is applied recursively. Using such an ap-
+proach, Chiang [8] gives an algorithm for computing the me-
+dial axis of a planar region bounded by piecewise C 2 curves.
+Also, Dutta and Homann [15] and Homann [18] present
+an approach to compute the medial axes of constructive solid
+geometry (CSG) models.
+
+===== PAGE 3 / 12 =====
+
+Sherbrooke et al. [24], Reddy and Turkiyyah [23], and
+Culver et al. [11] have demonstrated tracing algorithms for
+polyhedra, all using dierent methods to nd the endpoints
+of the seam curves. Culver et al. represent the medial axis
+exactly by means of systems of algebraic equations manipu-
+lated using rational arithmetic. Their method computes an
+exact representation of the medial axis provided there are
+no degeneracies (such as more than four seams intersecting
+at a point).
+All of the methods in this family have been applied to
+polyhedra composed of only a few hundred faces. It is not
+clear whether they can be applied to complex models com-
+posed of tens or hundreds of thousands of faces. Either their
+running time is more than O(n2), where n is the number of
+faces, or these algorithms are susceptible to accuracy and
+robustness problems.
+2.1.4 Surface Sampling Approaches
+Surface sampling methods represent the initial gure as a
+dense cloud of sample points presumed to be on or near the
+boundary. The medial axis of the gure is approximated by
+a subset of the Voronoi diagram of the point cloud. Dierent
+algorithms based on this approach use dierent methods for
+selecting the desired subset of the Voronoi diagram. Many
+such variations have been proposed. Boissonnat [6] classied
+certain triangles of the Delaunay tetrahedralization of the
+point cloud as interior to the model; the Voronoi vertices
+dual to those tetrahedra approximate the medial axis.
+Using a similar approach, Amenta et al. [1] construct
+an approximate, simplied medial axis which they use as
+a stage in a surface reconstruction from the original point
+cloud, a common application for this approach. Dey and
+Zhao [13, 14] also create a simplied surface model of a
+medial axis. Turkiyyah et al. [29] focus on improved ac-
+curacy rather than simplication. They follow the initial
+approximation with a numerical optimization step to move
+the sample points so that the Voronoi vertices are closer to
+the true medial axis. All of these authors give good surveys
+of this literature ([1, 13, 29]).
+These algorithms have been applied to models composed
+of tens of thousands of points. One of the main issues when
+applying these algorithms to polyhedral models is in gener-
+ating appropriate point samples on the boundary to ensure
+a tight approximation of the medial axis. In general, the
+worst-case running time of these algorithms can be O(n2),
+where n is the number of point samples. Recently, Attali
+and Boissonnat [2] have shown that the running time is only
+linear when the points are distributed on a xed number of
+well-sampled facets. However, the point sampling of the
+surface has to satisfy certain criteria.
+2.2 Medial Axis Simpliﬁcation
+A fundamental problem with the medial axis as a tool in
+shape analysis and surface reconstruction is that it is un-
+stable, in the sense that small perturbations in the surface
+model lead to large changes in the structure of the medial
+axis. For a polyhedral model, every pair of adjacent faces
+produces a medial axis sheet extending to the edge connect-
+ing the two faces, producing a cluttered and uninformative
+medial axis. A number of methods for simplifying the me-
+dial axis have been proposed.
+One of the criteria to identify parts of a medial axis that
+are stable is what we call the separation angle S(x). It
+is the maximum angle formed by the vectors connecting the
+medial axis point x to its closest points on the boundary, and
+portions of the medial axis with a larger separation angle
+tend to be more stable. This has been noted by several
+researchers based on analyzing functions on the boundary
+surface [4], investigating the eect of noise [3] or samples [7]
+on the medial axis or in other skeleton-based applications
+[26]. Amenta et al. [1] use a similar criterion to determine
+whether a point on the medial axis is stable.
+Dey and Zhao [13, 14] use a pair of criteria to retain
+faces from the Voronoi diagram of a set of points. For one
+criterion, they consider the angle between an approximate
+inward-pointing surface normal and a Delaunay edge (dual
+to a Voronoi face). If that angle is small, the Voronoi face
+is retained. The other criterion retains Voronoi faces if they
+are much farther from the surface sample points than the
+sample points are from each other.
+Styner et al. [27] iteratively merge and prune sheets ac-
+cording to a pair of cost functions designed to minimize the
+change to the reconstructed model. They achieve a substan-
+tial reduction in medial axis complexity.
+Choi and Seidel [10] study the stability of the medial axis
+and derive a bound on one measure of the instability of the
+medial axis for solids satisfying certain hypotheses.
+3. -SIMPLIFIED MEDIAL AXIS
+In this section we formally dene the -SMA and give
+some of its properties. While the relationship between the
+separation angle and stability is well known, we are not
+aware of this particular subset of the medial axis being stud-
+ied as an object in its own right. We show the degree to
+which it is more stable than the medial axis. Moreover, we
+dene the -SMAT, which includes the distance information
+just as the MAT does, and show that the original model
+can be reconstructed from the -SMAT to an accuracy that
+depends in a simple way on . The signicance of this rela-
+tionship is that it is a way of quantifying the importance of
+the portion of the medial axis retained in the -SMA. If the
+original model can be reconstructed with reasonable accu-
+racy, then one can argue that the most signicant portions
+of the medial axis are being preserved.
+Notation and Terminology: In this paper, vectors and
+points will be in boldface. Sets and functions will generally
+be denoted by capital letters. Unless otherwise specied, X
+will denote a solid with a polyhedral boundary.
+Given a set of geometric primitives S = fPig, the Voronoi
+region of a primitive Pi is the set of points that are at least
+as close to Pi as to any other primitive. The collection of
+Voronoi regions is the generalized Voronoi diagram, or GVD.
+The medial axis of a polyhedron is a subset of the GVD of
+its faces, edges, and vertices.
+We will say that an edge or vertex of X is reex if its in-
+cident faces are not coplanar and it intersects the boundary
+of a ball whose interior lies in the interior of X.
+Let X be a polyhedral solid with medial axis M. Re-
+call that M can be characterized as the closure of the set
+of points in the interior of X having at least two nearest
+neighbors on the boundary of X. (Sometimes the require-
+ment that the points be in the interior of X is relaxed.)
+Consider a point x 2 M, and let NS(x) denote the set of
+its nearest neighboring points on the boundary of X. There
+is a sphere centered at x that does not cross the boundary
+
+===== PAGE 4 / 12 =====
+
+x S(x)
+p1
+p2
+M
+Figure 1: The separation angle S(x) for a point on the medial
+axis. The thick border is the boundary of X.
+of X, but that touches it at just the points of NS(x).
+For each pair of points p1;p2 2 NS(x), we can consider
+the angle
+
+p1xp2. (We will treat all angles as values in
+[0; ].) If x has more than two nearest neighbors, then we
+consider the largest angle subtended by a pair of nearest
+neighbors. We call this angle the separation angle S(x) for
+the medial axis point x:
+S(x) = max
+p1;p2 2NSx
+(
+
+p1xp2)
+(see Figure 1).
+The intuitive motivation for this denition is as follows: If
+the separation angle is exactly , then x is directly between
+its nearest neighbors, while if the angle is small, then both
+neighboring points are on the same side of x, and there is
+space on the other side of x that is, in a natural sense, deeper
+in X.
+Given an angle , dene the -simplied medial axis M of
+X to be the set of points of M with separation angle greater
+than . When we wish to emphasize the relationship of M
+to a particular solid X, we will write M(X). The following
+facts follow from the denitions of M and M:
+ The -SMAs are nested, with larger angles implying
+smaller subsets. That is, if 0 < 1 < 2 < , then
+M2  M1.
+
+
+2(0;)
+M = M, where X denotes the closure of X.
+In this sense we can say that M ! M as  ! 0. Note that,
+even though we specied X as a polyhedral solid, all of the
+above applies to any solid.
+3.1 Quantifying the Signiﬁcanceof 
+In this section we derive a formula that quanties the
+degree to which the -SMA retains the signicant portions
+of the medial axis. It is well known that X can be recon-
+structed from M along with the radius values for each point
+on M. If we use M instead of M in the reconstruction, then
+we get a subset of X, which we can call X. The accuracy
+with which X approximates X is a measure of the degree
+to which M captures the important geometric features of
+X. Next, we formalize these notions, explaining what we
+mean by the accuracy of the approximation, and show how
+the accuracy is related to the separation angle , used as the
+angle cuto in simplifying the original medial axis.
+Formally, the medial axis transform is the set of all maxi-
+mal balls contained in X. The centers of the balls constitute
+the medial axis, and retaining the balls is equivalent to re-
+taining the radius information associated to each medial axis
+point. We dene the -simplied medial axis transform (-
+SMAT) to be the subset of the MAT consisting of those balls
+centered on points of the -SMA. X can be reconstructed
+as the union of all the maximal balls in the MAT of X, and
+X  X is the union of the balls in the -SMAT of X. By
+construction, M is the medial axis of X, but note that X
+may not correspond to a polyhedron.
+We can measure how closely X approximates X in two
+ways. First, we can compare the volumes of the two spaces,
+computing the ratio Vol(X)=Vol(X), where Vol(X) denotes
+the volume of X. Second, we can look at the distance be-
+tween points on the boundary of X and the nearest neigh-
+boring points on X. For each point p on the boundary of
+X, there is a well-dened local radius R(p) given by the ra-
+dius of the smallest maximal ball touching p (see Figure 1).
+We can measure the local error as the distance from p to its
+nearest neighbor p0 on the boundary of X, as compared to
+the local radius of p. That is, the local error E(p) is dened
+by
+E(p) = kp  p0k
+R(p) ;
+where p0 is the point on the boundary of X that is nearest
+to p.
+The following theorem shows how well X approximates
+X, as a function of .
+Theorem 1. Let
+g() = 1
+
+1  4
+3 sin2 
+2
+:
+Then Vol(X)=Vol(X)  g()3 and, for each point p on the
+boundary of X, E(p)  g()  1.
+Proof. We claim that, if all the balls of the -SMAT are
+enlarged by a factor of g(), then their union will contain
+X. The largest local feature that can be excluded from X
+is a corner such that the normals to the respective faces
+dier by an angle no greater than . If all the balls are
+enlarged by an appropriate ratio to include such corners,
+then their union will include all of X. We will argue that
+g() as dened above is the required ratio by which all the
+balls of the -SMAT must be enlarged to include all of X.
+First consider the 2D analogue (Figure 2). If there are
+two adjacent edges whose normals dier by an angle equal
+to the threshold angle , then no disk tangent only to those
+two edges will be added to the medial axis transform. Hence
+a disk such as the one shown will be the medial axis disk
+that is closest to the vertex p, and the external radius rext
+is the radius to which that disk must be enlarged to contain
+all of that corner. Thus, in two dimensions, g() = rext=r =
+sec(=2).
+In three dimensions, the corresponding situation consists
+of three faces coming together at p such that each pair of
+normals diers by . Let x be the center of the maximal
+ball closest to the extremal vertex p, and let p1, p2, and p3
+be the points nearest to x on each of the three faces meeting
+at p (see Figure 3).
+Consider the planes passing through x, p, and pi for i = 1,
+2, and 3. Since each pair of normals diers by the same
+angle, these planes must have dihedral angles of 2=3 to one
+
+===== PAGE 5 / 12 =====
+
+r rext
+p1
+p2
+p
+Figure 2: Computing the error bound. The angle subtended
+by p1 and p2 is equal to , so no circle tangent only to the
+edges containing p1 and p2 is represented in M. If the solid
+circle is enlarged into the dashed circle, then the vertex p will
+be included. The radius r is equal to the local radius R(p1) =
+R(p2).
+Figure 3: Computing rext = kp xk. The vector (p1 x) is
+a normal vector from x to a face on the boundary of X. There
+are two other such faces; the endpoints of the normal vectors
+to those faces, p2 and p3, are not shown. The point q bisects
+p1p2, which is one side of an equilateral triangle.
+another, and the points p1, p2, and p3 form an equilateral
+triangle in a plane orthogonal to xp. Let q be the point
+where this plane crosses xp, and let q0 be the midpoint of
+p1p2. Let rext = kp xk, and r = kp1 xk. Then our goal
+is to compute the ratio rext=r. For convenience, assume
+without loss of generality that r = 1, so that we only need
+to compute rext.
+If we denote
+
+p1xp by , then rext = 1= cos . We will
+compute sin . Let a = kp1  q0k, and b = kp1  qk. Then
+b = sin , and a = sin(=2). (This is because
+
+p1xp2 = .)
+Also, a = b
+p
+3=2 because p1q0 is perpendicular to qq0, and
+m
+
+p1qq0 = =3. Bear in mind that q is the center of the
+equilateral triangle 4p1p2p3. Thus,
+sin  = b = 2p
+3
+a = 2p
+3
+sin =2:
+Therefore,
+rext = 1
+
+1  sin2 
+= 1
+
+1  4
+3 sin2 
+2
+3.2 Stability and Connectivity
+One of the benets of the -SMA is that it is more stable
+than the medial axis. The medial axis of a nely tessel-
+lated polyhedron will have a sheet for every adjacent pair of
+faces, and many other pairs as well. The -SMA will only
+retain sheets for pairs of faces whose normals dier by an
+angle greater than , and thus, whose respective dihedral
+angles are less than   . Thus, introducing new vertices
+to generate a ner tessellation of the model will not create
+new sheets of the -SMA unless the new faces that are in-
+troduced to the polyhedron create suciently small angles
+with each other or with other faces in the model.
+Figure 4: Disconnectedness. The point x is on the medial
+axis but has a small separation angle.
+However, by design the -SMA detects small, elongated
+features, as in Figure 4. If such features are expected to
+arise as noise, then the -SMA will be aected by the noise.
+The relationship of  to the stability of the simplied medial
+axis is illustrated by Figure 5.
+The -SMA does not in general preserve the homotopy
+type of the model. It can be disconnected and have holes,
+even if X is simply connected. In Figure 4, M(X) is shown
+for   =3. The point x is on the medial axis of the space
+X, but not on M=3 because its separation angle is too low.
+If x were to move towards the rectangular feature at the
+top, the separation angle would increase until it exceeded
+the threshold angle, at which point x would be on M=3.
+This lack of a connectivity guarantee can be problematic
+for some applications. However, for others, what is desired
+is a characterization of the geometric properties of an ob-
+ject whose connectivity may already be understood. Also,
+it is possible to use a larger value of  to select signicant
+components of the object, and then compute again with a
+smaller value of  to achieve improved connectivity. The
+more connected version can then be pruned, retaining just
+enough information to connect the components correspond-
+ing to the larger value of .
+Finally, if it is desired to simplify X, one can remove small
+detached components of M, yielding a pruned version of the
+-SMA. After that one can reconstruct an approximation to
+X from the pruned -SMA.
+4. ALGORITHM
+In this section we present a fast algorithm to approximate
+M(X). The algorithm has two variations, one based on a
+uniform voxel grid, and the other on an adaptive subdivi-
+sion of space. We rst give an overview of the algorithm.
+We then describe in more detail the criterion we use to de-
+termine whether to add a face to the representation of M,
+after which we describe the dierent spatial subdivision ap-
+proaches. We conclude by describing two approaches to im-
+proving the surface representation of the -SMA.
+The algorithm is based on a vector eld that we call the
+
+===== PAGE 6 / 12 =====
+
+Head model  = 5  = 15  = 60.
+Triceratops model  = 15  = 30  = 60.
+Figure 5: Dierent -SMA for the same model. As the separation angle increases, the number of high frequency or sharp
+components decreases.
+neighbor direction eld of X, denoted NX. If x is a point
+having a unique nearest neighbor p on the boundary of X,
+then
+NX(x) = 1
+kp  xk(p  x):
+This eld consists of the negated gradients of the distance
+eld dened by the boundary of X, and it is well-dened
+everywhere outside the boundary and medial axis of X.
+Using NX, we dene a separation criterion to determine
+whether an arbitrary line segment in the interior of X crosses
+a sheet of the medial axis. The essence of the criterion is
+that two points x1 and x2 are taken to be on opposite sides
+of a medial axis sheet if NX(x1) and NX(x2) diverge. We
+use this criterion to test either the centers of the voxels of a
+uniform grid, or the cell vertices of an adaptive subdivision.
+When a pair of points passes the separation criterion, we
+add a facet between them to our model of M. Once the
+polygonal model is generated, it can be ltered to improve
+the t of the represented sheets to those of the actual -
+SMA.
+4.1 The Separation Criterion
+For a given pair of points we rst determine the angle be-
+tween the respective direction vectors given by NX. If the
+angle is not greater than the threshold  then we reject the
+pair. However, if it is greater than the threshold, we need
+to be careful to avoid false positives. If, say, a reex vertex
+is the nearest neighbor to both points in a pair, then both
+direction vectors will converge towards the vertex (see Fig-
+ure 6). If the points are close enough to the vertex, then the
+angle between the vectors can be greater than the threshold,
+even though the segment between the points does not cross
+the medial axis.
+To avoid this error, we need to check whether the vectors
+diverge. We check this condition by ensuring that the heads
+of the vectors are at least as far apart as the tails, where
+p
+v1 v2
+x1 x2
+Figure 6: The direction vectors at neighboring voxels can
+dier by a large angle even when the voxels are not on dierent
+sides of the medial axis.
+the lengths of the vectors are scaled to equal the separation
+between the neighboring points.
+Given the separation criterion, we now present algorithms
+for two spatial subdivision schemes, a uniform grid and an
+adaptive grid.
+4.2 Uniform Subdivision
+The simplest spatial subdivision is a uniform grid. There
+are ecient ways to compute a distance eld and its gradient
+that make use of the uniformity of the grid [17, 12]. We
+extend the algorithm presented in [17] for fast computation
+of the distance eld.
+Our goal is to create a uniform sampling of the direction
+eld of the model X. We divide the volume into an axis-
+aligned voxel grid, referring to a set of voxels with a constant
+z-value as a slice. The algorithm we use relies on the parallel
+nature of interpolation-based graphics hardware to perform
+the computation eciently for one slice at a time. The al-
+gorithm simultaneously computes a distance eld and a di-
+rection eld over a uniform 2D grid for each slice. We will
+describe the computation of the distance eld rst and then
+explain how we use it for direction computation. For each
+slice, the distance eld is a scalar function DX :    !  .
+If we decompose X into sub-objects Xi, then DX is deter-
+mined by the lower envelope (or minima) of the set of all
+the distance functions DXi. We thus decompose X into its
+
+===== PAGE 7 / 12 =====
+
+faces, edges, and vertices and compute the lower envelope
+of the distance elds of each of these primitives.
+The distance functions of these primitives can be repre-
+sented in a simple form. We highlight these functions for
+points, lines and planes. For edges and triangular faces,
+these denitions are combined in piecewise fashion to rep-
+resent the full distance eld for the primitive. We describe
+formulas for the slice z = 0 and for primitives placed in par-
+ticularly convenient congurations. The general forms can
+be derived by simple coordinate transformations.
+For a point p = (0; 0; c) and the slice z = 0, the distance
+eld is the hyperboloid
+Dp(x;y) =
+
+x2 + y2 + c2:
+For a point with arbitrary coordinates we perform a trans-
+lation on the distance eld.
+For the line L in the xz plane given parametrically by
+(ta; 0; tc) with a2 + c2 = 1, the distance is given by the
+elliptical cone
+DL(x;y) =
+
+x2c2 + y2:
+For a general line, we perform a translation and a rotation.
+Finally, let F be the plane dened by the equation ax +
+by + cz + d = 0. If we assume that a, b, and c are chosen so
+that a2 + b2 + c2 = 1, then the distance from a point to the
+plane is simply found by evaluating the left-hand side of the
+equation at that point. Thus, for the slice z = 0 we have
+DF(x; y) = ax + by + d:
+In 3-space, the Voronoi region of the interior of a triangu-
+lar face is dened by the three planes perpendicular to the
+face and passing through the edges. Points in this region
+are closer to the interior of the triangle than any of its edges
+or vertices. Similarly, the Voronoi region of the interior of
+a segment is dened by the planes normal to the segment
+and passing through the endpoints. For points outside the
+Voronoi region of the interior of a face or segment, we dene
+the distance to be innite by convention. Then, when the
+lower envelope of the distance elds for all the faces, edges
+and vertices is taken, the proper nearest neighbor will be
+determined for each point.
+As we generate the distance eld for each primitive, we
+also generate the direction eld for that particular primitive.
+The distance eld allows the lower envelope to be dened,
+and the lower envelope determines, for each point in the
+volume, which primitive denes the direction eld at that
+point. With the point p, the line L, and the plane F dened
+as above, unnormalized direction elds are given by
+Np(x; y) = (x; y;c)
+NL(x; y) = (xc2; y;xac)
+NF(x; y) = (ax + by + d)(a; b; c)
+To extract M, we construct NX for each slice by com-
+bining the direction elds for the primitives of X. We then
+evaluate each pair of voxels in the x, y, and z directions,
+adding a face to the approximate -SMA for each pair that
+passes the separation test. The computation of the distance
+eld and the direction eld maps very well to the rasteriza-
+tion hardware. More details are given in Section 6.
+4.3 Adaptive Subdivision
+Given the non-linear nature of the medial axis, in many
+applications it is possible to compute a better approxima-
+tion by using a non-uniform grid. We present an algorithm
+based on octree subdivision of the space. This approach re-
+quires two primitive operations. First, one needs to evaluate
+the neighbor direction eld NX(x) at an arbitrary point x
+in the volume of interest. Second, one must be able to de-
+termine whether an axis-aligned box contains, overlaps, or
+is contained by the object X. Both of these tests can be
+performed quickly using either a spatial subdivision to in-
+dex the faces of the boundary of X, or by using a bounding
+volume hierarchy of X. There are standard collision detec-
+tion packages that also provide the capability for distance
+queries, an example being PQP [20]. While these algorithms
+have been designed for object-object distance computation,
+it is straightforward to modify them to handle point-object
+computation. For instance, given a bounding volume hierar-
+chy of the object, one can compute the feature on X that is
+closest to x by computing the distance from x to the bound-
+ing volumes at dierent levels in the hierarchy. Given the
+closest feature, the algorithm also computes the direction
+vector from x.
+Using these two primitive operations, the algorithm is as
+follows:
+1. Begin with a single cell containing X.
+2. Until a chosen cell size is reached, iteratively subdivide
+the cells that either
+(a) contain at least part of X but are not contained
+in X, or
+(b) are contained in X and have a pair of neighboring
+cell vertices that meet the separation criterion.
+3. For each pair of vertices meeting the separation crite-
+rion, add a face to the medial axis as in the uniform
+grid approach.
+This algorithm is more memory ecient, as well as more
+time ecient (in terms of operation count), than the the
+uniform grid algorithm. However, the uniform subdivision
+scheme is simpler to implement and maps well to the ras-
+terization hardware.
+4.4 Reﬁningthe Medial-Axis Approximation
+The polyhedral approximation generated by the spatial
+subdivision schemes represents the -SMA up to a specied
+resolution. However, the sheets of the medial axis (which
+correspond to a portion of a quadric surface) are not well
+approximated by the axis-aligned facets of the voxel grid.
+In this section, we present two methods to rene the medial
+axis approximation.
+Smoothing. When we use uniform subdivision of space,
+the algorithm we we use to compute the distance eld pro-
+duces distance values with a bounded error, with a bound
+equal to half the diagonal width of a voxel. For this reason,
+we cannot use the distance mesh to achieve subpixel accu-
+racy in placing the faces of the medial axis mesh. However,
+we use the smoothing algorithm proposed by Taubin [28],
+a fast, non-shrinking smoothing lter. Because this lter
+is non-shrinking, it retains the shape of the medial axis
+sheets, while avoiding the stair-stepping appearance of the
+axis-aligned faces.
+
+===== PAGE 8 / 12 =====
+
+Figure 7: The rst step in an iterative renement of the
+approximate -SMA. x is the initial guess, and p is the nearest
+neighbor of x on the boundary. Sx;p is the center centered
+on x and passing through p. There is a maximal circle Smax
+(not shown) that is contained in X and contains Sx;p. We
+approach the medial axis by approaching Smax. Smax touches
+the boundary in at least two places. p0 and p00 are successive
+approximations to to the second point where Smax touches the
+boundary of X.
+Iterative Retraction. We have described an approach to
+perform distance queries (to the boundary) and direction
+computation at arbitrary points in the space. Based on this
+information, we can quickly nd points that are very close
+to the medial axis. Let x be a point in the interior of X, but
+not on the medial axis. Let p be the unique point on the
+boundary of X nearest to x, and let p0 be any other point on
+the boundary of X. Then p0 places an upper bound on how
+far x can be from the medial axis. Let Sx;p be the sphere
+centered at x and passing through p, with radius kx  pk.
+Since x is not on the medial axis, Sx;p is not a maximal
+sphere. Let Smax be the maximal sphere containing Sx;p.
+Then Smax exhibits the following properties:
+ It will be tangent to Sx;p, and hence centered on the
+line px passing through p and x.
+ It will be no larger than the unique sphere S 0 centered
+on px and passing through both p and p0, because S0
+already touches two points on the boundary of X.
+The center x0 of S0 is the most distant possible point from
+x where px could cross the medial axis. See Figure 7.
+In this way, points on the medial axis can be computed
+using an iterative algorithm. The algorithm proceeds in the
+following manner: Once S0 is found, we can dene x0 to be
+its center, and choose a new point p00 on the boundary of
+X as the boundary point nearest x0. Using p00 in place of
+p0, we construct S00, and repeat the process. As we perform
+more iterations, a sequence of circles is constructed that ap-
+proaches Smax. This algorithm ts quite well with the adap-
+tive subdivision approach as now we can compute vertices
+that are very close to the medial axis. Our method is simi-
+lar to a method used by Wilmarth, Amato, and Stiller [31]
+to retract randomly generated sample points to the medial
+axis.
+5. ANALYSIS
+In this section, we analyze the performance of our algo-
+rithm. This includes the accuracy of our approximation as
+well as the running time.
+5.1 Accuracy
+In this section we show that the discrete approximation
+computed by our algorithm converges to the actual -SMA
+as the resolution becomes arbitrarily ne. As before, let X
+be a polyhedral subspace of
+
+3, and let M be the medial
+axis of X. Let _X denote the interior of X. For a given  >
+0, let -simplied medial axis, M;, be the approximation
+produced by our algorithm at the resolution .
+The idea of our argument is that our algorithm estimates
+the set of points over which the neighborhood direction eld
+NX is discontinuous. The following theorem says that, in-
+side X, the direction eld can only be discontinuous at the
+medial axis. Since the direction eld is not dened on the
+medial axis, it follows that, in _X, the medial axis is precisely
+the set of discontinuities of the direction eld. We prove it
+based on the following theorem.
+Theorem 2. The neighbor direction eld NX is continu-
+ous on the space _X n M.
+Proof. Let x 2 _X be a point not on M. Either x is
+in a Voronoi cell of one of the faces, edges, or vertices of
+the boundary of X, or it is on the boundary between the
+Voronoi cells of a reex edge and a face, or between the cells
+of a reex vertex and a reex edge. For each of these cases
+the distance eld can be computed explicitly and is shown
+to be continuous in a neighborhood of x.
+The result does hold for all curvilinear shapes of practi-
+cal interest as well, but there are pathological cases where it
+fails. Choi, Choi, and Moon [9] give examples of such patho-
+logical cases in two dimensions, along with easily-satised
+criteria to ensure that a region does not exhibit such behav-
+ior.
+Theorem 3. For a given  > 0, the ; -SMA is within
+a Hausdor distance of
+p
+3=2 from a subset of the medial
+axis of X.
+Proof. Let F be any face of M;. F is a square face
+separating two voxels that satised the separation criterion.
+Let x1 and x2 denote the centers of those two voxels. Note
+that F is nowhere more than
+p
+3=2 from the most distant
+point on the segment x1x2, because each cubical voxel has
+side , and the distance from the center of a cube to the
+farthest point on its face is
+p
+3=2 times the side of the cube.
+We will show that the medial axis of X passes between x1
+and x2. It follows that no point on F is farther than
+p
+3=2
+from some point on the medial axis.
+Let pi be the point on the boundary of X that is nearest
+xi, for i = 1; 2. The separation criterion ensures that the pi
+are farther apart than the xi, which implies that the pi are
+on dierent features (faces, edges, or vertices) of the poly-
+hedral boundary of X. This inference follows by considering
+each type of feature in turn. Certainly the pi cannot be on
+the same vertex. If the pi are on the same edge, then the
+lines Li containing pi and xi for each i are perpendicular
+to the edge. Thus the distance from p1 to p2 is the nearest
+distance from L1 to L2, and so x1 can be no closer to x2.
+The same reasoning applies to show that the pi cannot be
+on the same face.
+For each t with 0  t  1, dene x(t) to be (1  t)x1 +
+tx2, so that x(t) traverses the segment x1x2. For each t,
+let p(t) be the nearest neighbor to x(t), if the neighbor is
+
+===== PAGE 9 / 12 =====
+
+unique. There cannot be a path traversed by p(t) from
+p1 to p2 that only crosses reex vertices and edges, since
+the direction vectors converge towards such edges, and the
+vectors at the endpoints of the segment diverge. Hence,
+there must be an intervening convex edge or vertex, resulting
+in a discontinuity in the direction eld. Therefore, x1x2
+crosses the medial axis, and hence F is entirely within the
+specied bound.
+We have shown M; is within a bounded distance of the
+medial axis of X. It remains to show that it actually con-
+verges to M.
+Theorem 4. The ; -SMA converges to the -SMA in
+Hausdor distance as  ! 0.
+Proof. We need only consider the sheets, since the dis-
+tance from the seams to the sheets is zero. Consider a point
+x on a sheet of M. Let v1 and v2 be the unit direction vec-
+tors to its two nearest neighbors. Recall that S(x) denotes
+the separation angle for x, that is, the angle between v1 and
+v2. Since x is on M, S(x) > . Let  = (S(x)  )=2. By
+the continuity of NX, there is a neighborhood B containing
+x such that the angle between NX(x0) and vi is less than 
+for each x0 in B and on the same side of the medial axis as
+vi.
+Now for suciently small , there will be adjacent voxels
+in the lattice of M; such that both voxels are contained in
+B, and the voxel centers are on opposite sides of the medial
+axis. Each such pair of voxels determines a face of M; that
+is contained in B. Since this applies for any suciently small
+neighborhood of x, this shows that the minimum distance
+from x to M; can be made arbitrarily small. Combined
+with Theorem 3, this completes the proof.
+5.2 Time Complexity
+In this section we discuss the time complexity of our algo-
+rithm. For the uniform grid approach, the analysis depends
+on the computational model that is used for the graphics
+hardware. If we assume that the hardware takes a a con-
+stant amount of time to render the distance eld for each
+primitive, then the algorithm we use to compute the direc-
+tion eld requires time (p=) where  is the resolution and p
+is the number of primitives (faces, edges, and vertices) in the
+model. Extracting the -SMA requires a single pass through
+the volume, requiring time proportional to 1=3, so that the
+running time for the entire algorithm is (p=+1=3). If we
+assume that rendering a slice of a distance eld takes time
+proportional to the number of voxels in the slice, then the
+total time is (p=3) or, equivalently, (pv), where v is the
+number of voxels.
+For the approach using an adaptive subdivision, the run-
+ning time is highly output sensitive. We note that each
+distance query can require time logarithmic in the size of
+the model, using current techniques, but the constant factor
+is quite small.
+6. IMPLEMENTATION AND RESULTS
+In this section we describe the implementation of our algo-
+rithm and highlight its performance on a number of complex
+benchmarks.
+Model Tris Resolution T(  ) T(SMA)
+Bent Torus 2,000 127x128x42 5.42 0.321
+Buddha 1 15,536 55x128x55 35.7 5.5
+Buddha 2 67,240 222x512x222 1634 48.8
+Buddha 3 1,087,474 55x128x55 1588 1.17
+Skel. Hand 654,666 79x106x127 602 0.07
+Elbow Pipe 5,306 96x59x77 6.95 1.10
+Elbow Pipe 5,306 128x79x103 10.8 3.87
+Elbow Pipe 5,306 192x119x155 20.4 5.59
+Elbow Pipe 5,306 256x159x207 33.1 8.24
+Elbow Pipe 5,306 512x318x414 127 69.3
+Bunny 69,451 64x63x50 77.4 0.12
+Bunny 69,451 128x126x100 238 0.982
+Bunny 69,451 256x253x200 794 2.51
+Head 21,764 31x41x50 13.3 0.09
+Head 21,764 79x106x127 57.8 0.22
+Primer Anvil 4,340 128x73x112 8.99 0.61
+Shell Charge 4,460 126x128x126 33.0 10.9
+Table 1: Timings for some models at various resolutions.
+The Buddha model is shown at three dierent levels of detail.
+Model: Name of the model. Tris: Number of triangles in
+the model. Resolution: Number of voxels along each dimen-
+sion. T(NX): Time to compute the neighbor direction eld.
+T(SMA): Time to extract the -SMA. All timings are in sec-
+onds on a 2Ghz Pentium 4 with an nVidia geForce 4 graphics
+card.
+6.1 Implementation
+We implemented the system in C++ using Microsoft Vi-
+sual Studio, with OpenGL as our graphics API. Our imple-
+mentation for computing the distance eld is based on the
+techniques described in Ho et al. [17]. In that approach, a
+volume is processed one slice at a time. For each slice, and
+each geometric primitive in the model, a surface, called a
+distance mesh, is rendered such that the depth buer con-
+tains the shortest 3-space distance from each point in the
+slice to the given geometric primitive (which may not be
+in the given slice). If a pixel from a given primitive's dis-
+tance mesh passes the depth test, then the pixel is in that
+primitive's Voronoi region.
+We extend this method to acquire direction information
+as well, by encoding the directions to the nearest primitive
+in the red, green, and blue channels of the color buer. Both
+the directions and distances are linearly interpolated across
+each triangle of the distance mesh, which is a source of error
+that grows with the size of the triangles. The distance mesh
+is designed to adjust the size of the triangles to keep the
+error within acceptable bounds.
+We encode the gradient vector at each vertex of the dis-
+tance mesh. It is important to keep in mind that each trian-
+gle is part of a distance mesh associated both to a geometric
+primitive and a slice of the volume. The slice corresponds
+to a z-value in the volume, but the z-coordinates of the
+rendered triangles correspond to distances from the slice to
+the primitive. The colors, likewise, correspond to directions
+from points on the slice to the primitive. Henceforth, when
+we refer to a given triangle of a distance mesh, we imply the
+projection of the triangle onto the specied slice.
+Each direction vector is of unit length, with the x, y, and
+z components represented by the red, green, and blue color
+components respectively. As the components are interpo-
+lated across the triangle, the magnitude diers from unit
+
+===== PAGE 10 / 12 =====
+
+Figure 8: A torus and its -SMA. 2000 triangles. The grid
+resolution is 127x128x42.
+a. b.
+Figure 9: The \primer anvil" for a shotgun shell. 4,340
+triangles, SMA computed at 128x73x112 resolution. (a) The
+model. (b) The -SMA. The seams and boundary curves of
+the -SMA are shown.
+length, so that the vectors must be normalized after being
+read back and before computing a dot product to test the
+separation angle. The direction diers from the true direc-
+tion. Consider a vertex which we can assume to be located
+at the origin, and a particular slice located at some depth z.
+Let p1, p2, and p3 be the vertices of a mesh triangle that
+has been projected into the plane of the slice. Then a point
+in the triangle can be expressed in barycentric coordinates,
+that is, as a sum  tipi with ti chosen so that  ti = 1.
+The true unit vector pointing towards the vertex, v, and the
+estimated vector ~v, are given by
+v = 
+
+tipi
+k  tipik; ~v = 
+
+ti^pi
+k  ti^pik;
+where ^p = p=kpk. Then the error in the direction is given
+by the angle cos1(v  ~v). We do not have a good bound
+on this expression other than to say that it is bounded by
+the largest angle subtended by the triangle from the point
+of view of the primitive. We also note that, for triangles,
+which are treated as primitives separately from their edges
+and vertices, there is no interpolation error because the di-
+rection vector is constant. Thus, for a voxel inside a convex
+polyhedron, the only source of error in direction is the fact
+that each component of the vector can only be expressed
+with 8 bits of precision in the color buer.
+An alternative approach is to encode the full vector from
+a. b.
+Figure 10: Shotgun shell \charge" with 4460 triangles. The
+grid resolution is 126x128x126. (a) The model. (b) Cross
+section, showing dierent sheets in dierent shades.
+each point on the slice to the given primitive, rather than
+a unit-length direction vector. This approach raised con-
+cerns with discretization error. However, with the advent
+of oating-point color buers, that objection may not be a
+concern in the future.
+6.2 Performance
+We applied our algorithm to polygonal models of various
+sizes, ranging from 2,000 triangles to more than 1 million.
+Some of the models were triangulations of scanned data, and
+others were CAD models. In general, scanned models have
+triangles with good aspect ratios and uniformly distributed
+over its boundary. However, many of these models have
+a high genus. On the other hand, the CAD models tend
+to have many sharp edges and uneven or high-aspect-ratio
+triangles.
+In our tests (Table 6.1), the bulk of the computation time
+is taken by the computation of distance elds. Comparing
+running times for dierent resolutions shows an increase that
+is more than linear but less than cubic in the number of
+voxels along one dimension.
+Except where otherwise specied, the separation angle
+ = 60, and the -SMAs have been smoothed. The res-
+olution is specied in terms of the dimensions of the scene.
+The relative dimensions of the volume were determined by
+slightly enlarging a tight bounding box for the model.
+7. COMPARISON WITH OTHER
+APPROACHES
+There are by now a large array of approaches for com-
+puting as well as simplifying the medial axis. Performance
+comparisons between them are dicult, because they make
+dierent assumptions about the input, and generate dier-
+ent kinds of medial axis approximations as output.
+The two main features of our approach are, rst, that it
+computes the -SMA and not the entire medial axis, and,
+second, that we use a fast algorithm based on uniform spatial
+subdivision to compute the distance eld and its gradient.
+As a result, we are able to compute good approximations of
+the -SMA for complex models in a few minutes.
+Tracing algorithms [11, 23, 24] are much more time con-
+suming and have only been applied to models consisting of a
+few hundred triangles. The adaptive subdivision algorithms
+of [30] and [16] computed the generalized Voronoi diagram,
+
+===== PAGE 11 / 12 =====
+
+a. b.
+Figure 11: Buddha model with 1,087,474 triangles. The grid
+resolution is 55x128x55.
+rather than the medial axis. Their methods were only ap-
+plied to models with up to a few hundred polygons. Our
+algorithm with adaptive subdivision is similar in approach
+to that of [30], but it creates a simplied medial axis rather
+than a generalized Voronoi diagram.
+The surface sampling approaches such as those of [6], [1],
+and [13], take point samples on the surface as input, rather
+than the boundary features of a polyhedron. The accuracy
+and topology of the resulting medial axis varies considerably
+based on the sampling criterion used to generate the point
+samples. This makes it dicult to compare the approaches.
+Amenta et al. [1] report times of roughly six minutes for
+models of around 30,000 points, and Dey et al. [13] process
+around 122,000 points in a little over ve minutes.
+8. CONCLUSION
+We have presented a medial axis approximation, the -
+SMA, based on the idea of the separation angle for a point
+on the medial axis. The criterion characterizing the -SMA
+is easy to understand and analyze, and it results in a more
+stable structure than Blum's medial axis. In practice, it is
+able to detect and capture most of the sharp features of the
+original model. We have presented a formal characterization
+of the simplication of -SMA as a function of .
+We have described two algorithms for fast approximating
+the -SMA. One, using a uniform grid, is well-suited for im-
+plementation using the parallel features of modern graphics
+hardware. We have highlighted its performance on a num-
+ber of complex benchmarks. The other algorithm uses an
+octree decomposition, in order to reduce the memory ex-
+pense and make the time eciency more output-dependent.
+Both algorithms t into a consistent framework; both pro-
+duce approximations that remain within a specied distance
+Figure 12: Skeleton hand with 654,666 triangles. The grid
+resolution is 79x106x127. No smoothing was performed.
+of some part of the full medial axis. We have analyzed the
+approximation errors produced by our algorithm.
+There are a number of areas of future work. The key
+to our use of graphics hardware is that the direction vec-
+tor eld, stored as RGB triples, is associated to the scalar
+distance eld, represented as depth values. This approach
+could be applied more generally to other pairs of associated
+vector and scalar elds. The use of graphics hardware for
+general computing purposes is currently an active area of re-
+search. We would like to compute the -SMA of solids with
+curved boundaries as well as procedural models. Moreover,
+we would like to use -SMA for dierent applications includ-
+ing mesh generation and shape analysis.
+9. ACKNOWLEDGMENTS
+We would like to thank Nancy Amato, the Stanford Uni-
+versity Computer Graphics Laboratory, the Georgia Tech
+Large Models Archive, and NASA, for the use of polyhe-
+dral models. We also thank Kenny Ho for his HAVOC
+software and for many helpful discussions, and we thank
+the reviewers for a number of suggestions on the exposition.
+Finally, this work has been supported in part by ARO Con-
+tract DAAD19-99-1-0162, NSF awards ACI 9876914, IIS-
+982167, ACI 0118743, ONR Contracts N00014-01-1-0067
+and N00014-01-1-0496, NLM Contract N01-LM-0-3501, and
+by Microsoft Corporation and Intel Corporation.
+10. REFERENCES
+[1] N. Amenta, S. Choi, and R. Kolluri. The power crust. In
+Proc. ACM Solid Modeling, pages 249{260, 2001.
+[2] D. Attali and J. Boissonnat. A linear bound on the
+complexity of the Delaunay triangulation of points on
+polyhedral surfaces. In Proc. ACM Solid Modeling, pages
+139{146, 2002.
+[3] D. Attali and A. Montanvert. Computing and simplifying
+2d and 3d continuous skeletons. Computer Vision and
+Image Understanding, 67(3):261{273, 1997.
+
+===== PAGE 12 / 12 =====
+
+a. b.
+c. d.
+Figure 13: Elbow pipe, at varying resolutions. (a) The
+model. Figures (b), (c) and (d), correspond to 128, 256, and
+512, voxels along the longest side, respectively. The gap visi-
+ble in (b) and (c) shows where the interior of the pipe model
+is separated by a surface into two compartments. The gap is
+not visible in (d) only because the angle of the scene is slightly
+dierent. The -SMA is not smoothed.
+Figure 14: Bunny. 69,451 triangles, 128x126x100. (a) The
+bunny in wireframe, with the medial axis. (b) The -SMA.
+[4] J. August, A. Tannenbaum, and S. Zucker. On the
+evolution of the skeleton. In Proc. Int. Conf. on Computer
+Vision, 1999.
+[5] H. Blum. A transformation for extracting new descriptors
+of shape. In W. Wathen-Dunn, editor, Models for the
+Perception of Speech and Visual Form, pages 362{380.
+MIT Press, 1967.
+[6] J.-D. Boissonnat. Geometric structures for
+three-dimensional shape representation. ACM Trans.
+Graph., 3(4):266{286, 1984.
+[7] J.-D. Boissonnat and F. Cazals. Smooth surface
+reconstruction via natural neighbour interpolation of
+distance functions. In ACM Symp. Computational
+Geometry, pages 223{232, 2000.
+[8] C.-S. Chiang. The Euclidean distance transform. Ph.D.
+thesis, Dept. Comput. Sci., Purdue Univ., West Lafayette,
+IN, Aug. 1992. Report CSD-TR 92-050.
+[9] H. I. Choi, S. W. Choi, and H. P. Moon. Mathematical
+theory of medial axis transform. Pacic J. Math.,
+181(1):56{88, 1997.
+[10] S. W. Choi and H.-P. Seidel. Linear onesided stability of
+MAT for weakly injective 3D domain. In Proc. ACM Solid
+Modeling, pages 344{355, 2002.
+[11] T. Culver, J. Keyser, and D. Manocha. Accurate
+computation of the medial axis of a polyhedron. In Proc.
+ACM Solid Modeling, pages 179{190, 1999.
+[12] P.-E. Danielsson. Euclidean distance mapping. Computer
+Graphics and Image Processing, 14:227{248, 1980.
+[13] T. K. Dey and W. Zhao. Approximate medial axis as a
+Voronoi subcomplex. In Proc. ACM Solid Modeling, pages
+356{366, 2002.
+[14] T. K. Dey and W. Zhao. Approximating the medial axis
+from the Voronoi diagram with a convergence guarantee. In
+European Symp. Algorithms, pages 387{398, 2002.
+[15] D. Dutta and C. M. Homann. A geometric investigation
+of the skeleton of CSG objects. In Proc. ASME Conf.
+Design Automation, 1990.
+[16] M. Etzion and A. Rappoport. Computing the Voronoi
+diagram of a 3-D polyhedron by separate computation of
+its symbolic and geometric parts. In Proc. ACM Solid
+Modeling, pages 167{178, 1999.
+[17] K. Ho, T. Culver, J. Keyser, M. Lin, and D. Manocha.
+Fast computation of generalized Voronoi diagrams using
+graphics hardware. Proc. ACM SIGGRAPH, pages
+277{286, 1999.
+[18] C. M. Homann. How to construct the skeleton of CSG
+objects. In Proc. 4th IMA Conf. on The Mathematics of
+Surfaces, Bath, UK, 1990. Oxford University Press.
+[19] L. Lam, S.-W. Lee, and C. Y. Chen. Thinning
+methodologies|A comprehensive survey. IEEE
+Trans. PAMI, 14(9):869{885, 1992.
+[20] E. Larsen, S. Gottschalk, M. Lin, and D. Manocha. Fast
+proximity queries with swept sphere volumes. Technical
+Report TR99-018, Dept. Comput. Sci., University of North
+Carolina, 1999.
+[21] V. Milenkovic. Robust construction of the Voronoi diagram
+of a polyhedron. In Proc. 5th Canad. Conf. Comput.
+Geom., pages 473{478, 1993.
+[22] I. Ragnemalm. The euclidean distance transformation in
+arbitrary dimensions. Pattern Recognition Letters,
+14:883{888, 1993.
+[23] J. Reddy and G. Turkiyyah. Computation of 3D skeletons
+using a generalized Delaunay triangulation technique.
+Computer-Aided Design, 27:677{694, 1995.
+[24] E. C. Sherbrooke, N. M. Patrikalakis, and E. Brisson.
+Computation of the medial axis transform of 3-D
+polyhedra. In Proc. ACM Solid Modeling, pages 187{199.
+ACM, 1995.
+[25] K. Siddiqi, S. Bouix, A. Tannenbaum, and S. W. Zucker.
+The Hamilton-Jacobi skeleton. In International Conf.
+Computer Vision, pages 828{834, 1999.
+[26] D. W. Storti, G. M. Turkiyyah, M. A. Ganter, C. T. Lim,
+and D. M. Stal. Skeleton-based modeling operations on
+solids. In Proc. ACM Solid Modeling, pages 141{154, 1997.
+[27] M. Styner, G. Gerig, S. Joshi, and S. Pizer. Automatic and
+robust computation of 3D medial models incorporating
+object variability. International Journal of Computer
+Vision, to appear.
+[28] G. Taubin. A signal processing approach to fair surface
+design. In Proc. ACM SIGGRAPH, pages 351{358, 1995.
+[29] G. M. Turkiyyah, D. W. Storti, M. Ganter, H. Chen, and
+M. Vimawala. An accelerated triangulation method for
+computing the skeletons of free-form solid models.
+Computer-Aided Design, 29(1):5{19, Jan. 1997.
+[30] J. Vleugels and M. Overmars. Approximating generalized
+Voronoi diagrams in any dimension. Technical Report
+UU-CS-1995-14, Dept. Comput. Sci., Utrecht University,
+1995.
+[31] S. A. Wilmarth, N. M. Amato, and P. F. Stiller. Motion
+planning for a rigid body using random networks on the
+medial axis of the free space. ACM Symp. Computational
+Geometry, pages 173{180, 1999.
+[32] Y. Y. Zhang and P. S. P. Wang. Analytical comparison of
+thinning algorithms. Int. J. Pattern Recognit. Artif. Intell.,
+7:1227{1246, 1993.
