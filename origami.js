@@ -1072,10 +1072,15 @@ class Origami {
         const p_f = this.points[f[0]];
 
         // Inset corner list: M ≥ Nf points. M > Nf when some vertex emits
-        // multiple seams — those extra corners produce extra (notch) walls
-        // that mirror the prism's internal bevel triangles.
+        // multiple medial seams — those extra corners produce extra
+        // "notch" walls that mirror the prism's internal bevel triangles.
+        // opts.useFlatCorners=true forces M = Nf (one corner per face
+        // vertex, no notch walls), giving the mold its expected layout:
+        // exactly one wall per face edge, each on the dihedral bisector
+        // between this face and its neighbor across that edge.
         let cornerList;
-        if (this.medial && this.medial.seams && this.medial.seams.length > 0) {
+        if (!opts.useFlatCorners
+            && this.medial && this.medial.seams && this.medial.seams.length > 0) {
             cornerList = this.getInsetCorners(fi, this.medial, cutterDepth);
         } else {
             cornerList = f.map((pi, i) => ({ pt: this.points[pi], vertexIdx: i }));
@@ -1186,13 +1191,16 @@ class Origami {
 
         // Each perimeter corner = intersection of the two adjacent walls'
         // shifted lines at the given vertical level, then lifted by vertY*upDir.
+        // vertY may be a number (uniform height) or a function (k) => number
+        // for per-corner heights (used by medial-junction clipping below).
         const buildPerimeter = (anchor, baseOffset, vertY) => {
             const out = [];
             for (let k = 0; k < M; k++) {
                 const wPrev = wallData[(k - 1 + M) % M];
                 const wCurr = wallData[k];
-                const oPrev = baseOffset + vertY * Math.tan(wPrev.alpha);
-                const oCurr = baseOffset + vertY * Math.tan(wCurr.alpha);
+                const y = (typeof vertY === 'function') ? vertY(k) : vertY;
+                const oPrev = baseOffset + y * Math.tan(wPrev.alpha);
+                const oCurr = baseOffset + y * Math.tan(wCurr.alpha);
                 const p1 = vadd(anchor(wPrev), smult(oPrev, wPrev.outDir));
                 const p2 = vadd(anchor(wCurr), smult(oCurr, wCurr.outDir));
                 const cross = vXprd(wPrev.edgeDir, wCurr.edgeDir);
@@ -1204,17 +1212,77 @@ class Origami {
                     const t = vdot(vXprd(vsub(p2, p1), wCurr.edgeDir), cross) / cm2;
                     inter = vadd(p1, smult(t, wPrev.edgeDir));
                 }
-                out.push(vadd(inter, smult(vertY, upDir)));
+                out.push(vadd(inter, smult(y, upDir)));
             }
             return out;
         };
 
+        // Per-vertex height clipping (opts.clipToMedialJunction=true). At each
+        // face vertex, find the closest medial-axis junction depth via the
+        // seams emanating from that vertex with fi in their gov, and clip the
+        // wall height to that depth (with a minWall floor and the global
+        // `height` upper bound). Skips negative depths (medial-tracer
+        // anomalies on non-convex shapes) and clamped 10.0 cm depths
+        // (traversal didn't reach a junction). Without clipping, walls past
+        // the local medial junction extrude into "thin blade" peaks that
+        // self-intersect at the next vertex.
+        // Lateral extension cap: each edge's wall is allowed to extend at
+        // most `maxLateral` outward from the face polygon edge. At an edge
+        // with dihedral half-angle alpha the wall extends by h·tan(α), so
+        // the max height for that edge is maxLateral / tan(α). Per face
+        // vertex, the height is the smaller of the two adjacent edges'
+        // caps. Without this cap, sharp dihedrals (large α) produce huge
+        // walls that take forever to print.
+        const maxLateral = opts.maxLateralExtension;
+        const maxEdgeHeight = faceEdgeData.map(ed => {
+            if (maxLateral === undefined) return Infinity;
+            const tanA = Math.abs(Math.tan(ed.alpha));
+            if (tanA < 1e-6) return Infinity;
+            return maxLateral / tanA;
+        });
+        const useMedial = opts.clipToMedialJunction
+            && this.medial && this.medial.seams && this.medial.seams.length > 0;
+        let topYFn = height;
+        let clippedHeight = null;
+        if (useMedial || maxLateral !== undefined) {
+            const tol2 = 1e-3;
+            const sameVecLocal = (a, b) =>
+                Math.abs(a[0]-b[0]) < tol2 && Math.abs(a[1]-b[1]) < tol2 && Math.abs(a[2]-b[2]) < tol2;
+            const minWall = opts.minWall ?? 0.1;
+            clippedHeight = [];
+            for (let i = 0; i < Nf; i++) {
+                let chosen = height;
+                if (useMedial) {
+                    const v_pos = this.points[f[i]];
+                    const seams = this.medial.seams.filter(s => {
+                        const fromV = sameVecLocal(s.start, v_pos) || sameVecLocal(s.end, v_pos);
+                        return fromV && s.faces.includes(fi);
+                    });
+                    const depths = [];
+                    seams.forEach(seam => {
+                        const cross = this._traverseToDepth(seam, v_pos, fi, 1e6, n_f, p_f, this.medial, sameVecLocal, 0);
+                        const d = vdot(vsub(cross, p_f), n_f);
+                        if (d > 0 && d < 9.99) depths.push(d);
+                    });
+                    if (depths.length > 0) chosen = Math.min(chosen, Math.min(...depths));
+                }
+                // Adjacent edges at face vertex i: edge (i-1) ends here,
+                // edge i starts here. Use the smaller cap.
+                const edgeCap = Math.min(
+                    maxEdgeHeight[(i - 1 + Nf) % Nf],
+                    maxEdgeHeight[i]);
+                chosen = Math.min(chosen, edgeCap);
+                clippedHeight.push(Math.max(minWall, chosen));
+            }
+            topYFn = (k) => clippedHeight[cornerList[k].vertexIdx];
+        }
+
         const aOuter = w => w.aOuter;
         const aInner = w => w.aInner;
         const outerBottom = buildPerimeter(aOuter, margin - thickness, 0);
-        const outerTop    = buildPerimeter(aOuter, margin - thickness, height);
+        const outerTop    = buildPerimeter(aOuter, margin - thickness, topYFn);
         const innerBottom = buildPerimeter(aInner, margin, 0);
-        const innerTop    = buildPerimeter(aInner, margin, height);
+        const innerTop    = buildPerimeter(aInner, margin, topYFn);
 
         // Four rings of M points; bottom rings have count[v]-1 duplicate slots
         // per multi-corner vertex (the notch walls collapse to a point at z=0),
@@ -1264,7 +1332,11 @@ class Origami {
                 idx.push([OTh + k, OTh + j, OT + j, OT + k]);
             }
         }
-        return { pt, idx };
+        // heightAt: per-face-vertex wall height after clipping (medial +
+        // lateral cap). null if no clipping was applied (uniform `height`).
+        // Used by buildFaceMold to recenter screw holes at the actual wall
+        // midline rather than at moldHeight/2.
+        return { pt, idx, heightAt: clippedHeight };
     }
 
     // Mold piece for face fi: same shape family as the cookie cutter, but
@@ -1281,6 +1353,22 @@ class Origami {
             baseWidth: moldWidth,
             flangeInset: 0,
             height: moldHeight,
+            // Clip wall height at each face vertex to the local medial-
+            // axis junction depth, with a 1 mm floor. Without this, walls
+            // run past the medial junction on non-convex shapes and turn
+            // into thin self-intersecting blades. Cutters keep uniform
+            // height (no clipping) since the cutter sits OUTSIDE the
+            // polyhedron and the medial axis doesn't apply to it.
+            clipToMedialJunction: true,
+            minWall: opts.minWall ?? 0.1,
+            // Mold walls: one per face edge (on the dihedral bisector),
+            // no medial-axis-derived notch walls at degenerate vertices.
+            useFlatCorners: true,
+            // Cap each wall's lateral extension at 1.3·moldHeight. Sharp
+            // dihedral edges (large α) would otherwise produce huge walls
+            // (h·tan(α) blowing up); this clips their height so the wall
+            // doesn't extend more than ~1 cm past the face edge.
+            maxLateralExtension: opts.maxLateralExtension ?? 1.3 * moldHeight,
         });
     }
 

@@ -457,11 +457,40 @@ class Ui {
         arrangeBtn.width = "120px";
         arrangeBtn.onPointerClickObservable.add(autoArrangeFlat);
 
+        // Toggle alpha on all face/mold/cutter meshes between the default
+        // translucent (0.5) and fully opaque (1.0). Useful for inspecting
+        // overlaps between adjacent face molds, which are hard to see
+        // through the default translucency. Re-applies on click — new
+        // meshes added after toggling stay at their build-time alpha until
+        // the user clicks again.
+        let allOpaque = false;
+        const opaqueBtn = BABYLON.GUI.Button.CreateSimpleButton("opaqueToggle", "Opaque: off");
+        opaqueBtn.cornerRadius = 10;
+        opaqueBtn.color = "White";
+        opaqueBtn.thickness = 1;
+        opaqueBtn.background = "Grey";
+        opaqueBtn.height = "30px";
+        opaqueBtn.width = "120px";
+        opaqueBtn.onPointerClickObservable.add(() => {
+            allOpaque = !allOpaque;
+            const targetAlpha = allOpaque ? 1.0 : 0.5;
+            scene.meshes.forEach(m => {
+                if (!m.material) return;
+                if (m.name === "ground") return;
+                if (m.name && (m.name.startsWith("gl")
+                            || m.name.startsWith("seam")
+                            || m.name.startsWith("junction"))) return;
+                m.material.alpha = targetAlpha;
+            });
+            opaqueBtn.textBlock.text = `Opaque: ${allOpaque ? 'on' : 'off'}`;
+        });
+
         let swPanel = new BABYLON.GUI.StackPanel();
         swPanel.addControl(gPanel);
         swPanel.addControl(header);
         swPanel.addControl(thickPanel);
         swPanel.addControl(arrangeBtn);
+        swPanel.addControl(opaqueBtn);
         swPanel.addControl(sw);
 
         swPanel.left = "90px";
@@ -490,6 +519,17 @@ class Ui {
 
             const Nf = face.length;
             const n_f = theOrigami.getNorm(fidx);
+            // Per-face-vertex wall heights after clipping (medial junction
+            // + lateral cap). null when no clipping was applied → fall back
+            // to the uniform opts.moldHeight everywhere. Used to recenter
+            // screw holes at the actual wall midline.
+            const heightAt = r.heightAt;
+            const wallHeightAtFrac = (edgeIdx, frac) => {
+                if (!heightAt) return opts.moldHeight;
+                const hi = heightAt[edgeIdx];
+                const hj = heightAt[(edgeIdx + 1) % Nf];
+                return hi * (1 - frac) + hj * frac;
+            };
             // Mold extrudes in -n_f (outward from polyhedron), matching
             // getCutterPolyhedron. Build-plate transform then sends -n_f
             // to +z so the print lands face-on-bed.
@@ -637,17 +677,22 @@ class Ui {
                     // separated by `thickness` along outDir (in face plane);
                     // the perpendicular separation is thickness·cos(alpha).
                     const wallT = opts.thickness * Math.cos(g.alpha);
-                    // Distance along sDir to reach perpendicular height
-                    // moldHeight/2 (half-way up the wall). sDir tilts away
-                    // from the face plane by alpha, so a step of L along
-                    // sDir gains only L·cos(alpha) in perpendicular height.
-                    const sLift = opts.moldHeight
-                        / (2 * Math.max(Math.cos(g.alpha), 1e-6));
+                    // Distance along sDir to reach half the wall's actual
+                    // perpendicular height at this edge fraction. sDir
+                    // tilts away from face plane by alpha so a step of L
+                    // along sDir gains only L·cos(alpha) perpendicular,
+                    // hence sLift = h / (2·cos α). The wall height varies
+                    // along the edge because of per-vertex clipping
+                    // (medial junction + lateral cap), so use the
+                    // linearly-interpolated height at frac=0.25 and 0.75.
+                    const cosA = Math.max(Math.cos(g.alpha), 1e-6);
+                    const sLiftMale   = wallHeightAtFrac(edgeIdx, 0.25) / (2 * cosA);
+                    const sLiftFemale = wallHeightAtFrac(edgeIdx, 0.75) / (2 * cosA);
 
                     // Male side at frac=0.25: 4mm clearance hole.
                     const liftedM = vadd(
                         vadd(g.v_i, smult(0.25, g.edgeVec)),
-                        smult(sLift, sDirN));
+                        smult(sLiftMale, sDirN));
                     const maleHoleLen = 2 * (wallT + safety);
                     const maleHole = buildCylinderManifold(liftedM, wDir, maleR, maleHoleLen);
                     if (maleHole) {
@@ -661,7 +706,7 @@ class Ui {
                     // surface, then 3.6mm pilot through wall + boss.
                     const liftedF = vadd(
                         vadd(g.v_i, smult(0.75, g.edgeVec)),
-                        smult(sLift, sDirN));
+                        smult(sLiftFemale, sDirN));
                     // Cavity surface point is one wall-thickness IN +wDir
                     // direction from the exterior (lifted) point — with
                     // upDir = -n_f, wDir points from the external surface
