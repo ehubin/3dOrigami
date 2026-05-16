@@ -7,7 +7,7 @@
 //
 // Bump FIXTURES_VERSION to force re-seed on next load (won't touch user shapes).
 
-const FIXTURES_VERSION = 7;
+const FIXTURES_VERSION = 8;
 const SCALE = 2.5; // unit shapes -> ~5-unit objects
 
 // --- Regular tetrahedron (alternating cube corners) -----------------------
@@ -297,6 +297,31 @@ const FIXTURES = [tetrahedron, cube, octahedron, squarePyramid, triangularPrism,
     .map(fx => applyScale(fx, SCALE))
     .map(restOnGround);
 
+// Bug-repro fixtures: saved verbatim from a user-reported failure case.
+// No flipWindings / applyScale / restOnGround — the coordinates already match
+// the app's in-use convention, and we want byte-exact reproduction.
+const BUG_FIXTURES = [
+    {
+        name: "Bug Repro",
+        pt: [
+            [-7.857804999999999, 0.14219500000000018, 0],
+            [13.879228293947627, 0.13208460533423572, 0],
+            [0, 10, 0],
+            [1.0670257307320585, 7.210144980585696, 6.3897847083033845],
+            [12.084819478818591, 7.112656299264058, 7.035846796651961],
+            [5.094714410004924, -0.41541298527262416, 7.005105203455329],
+            [-2.049898566280639, 4.979848252635503, 19.43571043586336],
+            [-2.6271353542428555, 4.1883343623012745, 8.51644757201457],
+            [-6.337720830198144, 10.207082544514837, 3.2476760988902083],
+            [-18.65743530764542, 2.3288868237591975, 2.1536519089424155]
+        ],
+        f: [
+            [0,1,2],[0,2,3],[2,1,3],[3,1,4],[4,1,5],[4,5,3],
+            [3,5,6],[6,5,7],[0,3,8],[0,8,9],[8,3,9]
+        ]
+    }
+];
+
 (function seedFixtures() {
     let storedVersion = 0;
     if (localStorage.hasOwnProperty("__fixturesVersion")) {
@@ -315,6 +340,14 @@ const FIXTURES = [tetrahedron, cube, octahedron, squarePyramid, triangularPrism,
         if (!exists || forceWrite) {
             const value = { pt: fx.pt, f: fx.f, expected: fx.expected };
             localStorage.setItem(fx.name, JSON.stringify(value));
+            writes++;
+        }
+        if (!saved.includes(fx.name)) saved.push(fx.name);
+    });
+    BUG_FIXTURES.forEach(fx => {
+        const exists = localStorage.hasOwnProperty(fx.name);
+        if (!exists || forceWrite) {
+            localStorage.setItem(fx.name, JSON.stringify({ pt: fx.pt, f: fx.f }));
             writes++;
         }
         if (!saved.includes(fx.name)) saved.push(fx.name);

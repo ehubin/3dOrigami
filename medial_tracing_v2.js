@@ -4,6 +4,44 @@ console.log("medial_tracing.js start");
 // Local epsilon for numerical comparisons
 const mt_eps = 0.0001;
 
+// True iff p (assumed on or near the polygon's plane) is inside the convex
+// polygon. n is the polygon's plane normal (any orientation).
+function pointInPolygon3D(p, polyVerts, n) {
+    let sign = 0;
+    for (let i = 0; i < polyVerts.length; ++i) {
+        const v0 = polyVerts[i];
+        const v1 = polyVerts[(i + 1) % polyVerts.length];
+        const s = vdot(vXprd(vsub(v1, v0), vsub(p, v0)), n);
+        if (s > mt_eps)      { if (sign < 0) return false; sign = 1; }
+        else if (s < -mt_eps){ if (sign > 0) return false; sign = -1; }
+    }
+    return true;
+}
+
+// Euclidean distance from p to a planar convex polygon. If p's perpendicular
+// foot lies inside the polygon, returns |signed plane distance|; otherwise
+// returns distance to the closest polygon edge. This is what the medial-axis
+// tracer needs when comparing candidate-face proximity on non-convex or open
+// meshes — signed plane distance can be misleadingly small (or negative) for
+// faces whose polygons don't actually cover this region of space.
+function pointToPolygonDist3D(p, polyVerts, n) {
+    const d = vdot(vsub(p, polyVerts[0]), n);
+    const foot = vsub(p, smult(d, n));
+    if (pointInPolygon3D(foot, polyVerts, n)) return Math.abs(d);
+    let minD2 = Infinity;
+    for (let i = 0; i < polyVerts.length; ++i) {
+        const v0 = polyVerts[i];
+        const v1 = polyVerts[(i + 1) % polyVerts.length];
+        const e = vsub(v1, v0);
+        const ee = vdot(e, e);
+        const t = ee > 0 ? Math.max(0, Math.min(1, vdot(vsub(p, v0), e) / ee)) : 0;
+        const diff = vsub(p, vadd(v0, smult(t, e)));
+        const d2 = vdot(diff, diff);
+        if (d2 < minD2) minD2 = d2;
+    }
+    return Math.sqrt(minD2);
+}
+
 class MTJunction {
     gov = []; // Array of face indices
     pt = [];  // [x, y, z]
@@ -137,21 +175,27 @@ class MedialTracing {
     traceSeam(seam) {
         // Validity check: at startPt + eps*dir, no face outside the seam's gov
         // should be closer than the gov faces (else this 3-face bisector isn't
-        // on the actual medial axis — a 4th face dominates here).
+        // on the actual medial axis — a 4th face dominates here). Uses
+        // distance to the face POLYGON, not its plane: for non-convex / open
+        // meshes a face's plane can extend through space the polygon doesn't
+        // cover, yielding spurious phantom-seam rejections under plane
+        // distance. Polygon distance reduces to plane distance for closed
+        // convex meshes (foot always inside), so the legacy fixtures behave
+        // identically.
         const valEps = 0.01;
         const checkPt = vadd(seam.startPt, smult(valEps, seam.dir));
         let govDist = Infinity;
         seam.faces.forEach(g => {
             const ng = this.o.getNorm(g);
-            const pg = this.o.points[this.o.faces[g][0]];
-            const dg = vdot(vsub(checkPt, pg), ng);
+            const polyG = this.o.faces[g].map(pi => this.o.points[pi]);
+            const dg = pointToPolygonDist3D(checkPt, polyG, ng);
             if (dg < govDist) govDist = dg;
         });
         for (let k = 0; k < this.o.faces.length; ++k) {
             if (seam.faces.includes(k)) continue;
             const nk = this.o.getNorm(k);
-            const pk = this.o.points[this.o.faces[k][0]];
-            const dk = vdot(vsub(checkPt, pk), nk);
+            const polyK = this.o.faces[k].map(pi => this.o.points[pi]);
+            const dk = pointToPolygonDist3D(checkPt, polyK, nk);
             if (dk < govDist - mt_eps) return; // phantom seam, drop
         }
 
@@ -177,6 +221,16 @@ class MedialTracing {
                 let t = num / denom;
 
                 if (t > mt_eps && t < minT) {
+                    // Only accept the plane-bisector crossing when face k's
+                    // POLYGON actually covers the hit point — otherwise the
+                    // medial axis doesn't really transition into a gov set
+                    // containing k here (k's plane extends past its polygon).
+                    // Same rationale as the validity check.
+                    const hitPt = vadd(seam.startPt, smult(t, seam.dir));
+                    const dk = vdot(vsub(hitPt, pk), nk);
+                    const foot = vsub(hitPt, smult(dk, nk));
+                    const polyK = f.map(pi => this.o.points[pi]);
+                    if (!pointInPolygon3D(foot, polyK, nk)) return;
                     minT = t;
                     bestF = k;
                 }

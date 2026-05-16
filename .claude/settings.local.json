@@ -13,7 +13,8 @@
       "WebFetch(domain:research.cs.tamu.edu)",
       "Bash(pdftotext -f 5 -l 12 \"/c/Users/ehubin/OneDrive/Documents/3dOrigami/docs/AccurateComputationOfMA.pdf\" /tmp/acc_mid.txt)",
       "Read(//tmp/**)",
-      "Bash(pdftotext -f 14 -l 22 \"/c/Users/ehubin/OneDrive/Documents/3dOrigami/docs/3DMedialAxis_hal.pdf\" /tmp/3d_appendix.txt)"
+      "Bash(pdftotext -f 14 -l 22 \"/c/Users/ehubin/OneDrive/Documents/3dOrigami/docs/3DMedialAxis_hal.pdf\" /tmp/3d_appendix.txt)",
+      "Bash(awk -v RS='function ' '/CreatePolyhedron/' c:/Users/ehubin/OneDrive/Documents/3dOrigami/lib/babylon.js)"
     ],
     "deny": [],
     "ask": []
