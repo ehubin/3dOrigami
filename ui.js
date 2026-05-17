@@ -64,7 +64,7 @@ class Ui {
             "import": ["importer", "i"],
             "switch": ["mode a plat", ";", "mode 3D"],
             "cutterOpt": ["⚙", "h"],
-            "exportCutter": ["Exporter cutter"],
+            "exportAll": ["Exporter tout"],
             "cutterOptTitle": ["Options du cutter"],
             "marginField": ["Marge (cm):"],
             "heightField": ["Hauteur (cm):"],
@@ -97,7 +97,7 @@ class Ui {
             "import": ["import", "i"],
             "switch": ["print mode", ";", "3D mode"],
             "cutterOpt": ["⚙", "h"],
-            "exportCutter": ["Export cutter"],
+            "exportAll": ["Export all"],
             "cutterOptTitle": ["Cutter options"],
             "marginField": ["Margin (cm):"],
             "heightField": ["Height (cm):"],
@@ -191,9 +191,9 @@ class Ui {
         tlgrid.addControl(this.createButton("close"), 0, 6);
         tlgrid.addControl(this.createButton("del"), 0, 7);
         tlgrid.addControl(this.createButton("cutterOpt"), 1, 6);
-        // Top-right toolbar: Export Cutter (left) + New (right). Click
-        // handler for Export Cutter is wired below where the manifold/STL
-        // helpers are in scope.
+        // Top-right toolbar: Export All (left) + New (right). Click
+        // handler for Export All is wired below where the STL helpers are
+        // in scope.
         let topRight = new BABYLON.GUI.Grid();
         topRight.addRowDefinition(40, true);
         topRight.addColumnDefinition(150, true);
@@ -201,8 +201,8 @@ class Ui {
         topRight.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_RIGHT;
         topRight.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
         topRight.width = "270px"; topRight.height = "40px";
-        const expCutterBtn = this.createButton("exportCutter");
-        topRight.addControl(expCutterBtn, 0, 0);
+        const expAllBtn = this.createButton("exportAll");
+        topRight.addControl(expAllBtn, 0, 0);
         topRight.addControl(this.createButton("new"), 0, 1);
         ui.addControl(topRight);
         let panel = new BABYLON.GUI.Grid();
@@ -581,6 +581,138 @@ class Ui {
             // (visible as MeshMixer "stripes" inside the engraving).
             let mesh;
             let bodyM = window.manifold ? polyhedronToManifold(r.pt, r.idx) : null;
+
+            // Clip the body manifold so it can't intrude into neighboring
+            // molds' territories. Two passes:
+            //   (a) For each edge of F that has an edge-adjacent face F',
+            //       clip by the dihedral bisector plane (contains the edge,
+            //       bisects the F–F' dihedral).
+            //   (b) For each vertex V of F, for every OTHER face F'' that's
+            //       incident to V but does NOT share an edge with F at V,
+            //       clip by a vertex-separator plane through V with normal
+            //       (n_F'' − n_F). F's mold extends in −n_F (into the
+            //       polyhedron interior), which projects positively onto
+            //       (n_F'' − n_F), so we keep that side. Without (b), at a
+            //       many-valent vertex (e.g. 5 faces meeting at V1) F can
+            //       overlap with non-edge-adjacent faces like F4/F5.
+            if (bodyM && window.manifold) {
+                const fCentroid = face.reduce(
+                    (acc, pi) => vadd(acc, theOrigami.points[pi]), [0, 0, 0]);
+                const fCentroidNorm = smult(1 / Nf, fCentroid);
+
+                // Pass (a): edge-adjacent dihedral bisector clipping.
+                const adjAtEdge = []; // [edgeIdx] → other-face index (or -1)
+                for (let edgeIdx = 0; edgeIdx < Nf; edgeIdx++) {
+                    const va = theOrigami.points[face[edgeIdx]];
+                    const vb = theOrigami.points[face[(edgeIdx + 1) % Nf]];
+                    const adj = theOrigami.findVOtherFaceContaining(
+                        face[edgeIdx], face[(edgeIdx + 1) % Nf], fidx);
+                    adjAtEdge.push(adj ? adj[0] : -1);
+                    if (!adj) continue; // boundary edge, no neighbor
+                    const n_adj = theOrigami.getNorm(adj[0]);
+                    const edgeDir = vnormalize(vsub(vb, va));
+                    const outDirF  = vnormalize(vXprd(edgeDir, n_f));
+                    const outDirFp = smult(-1, vnormalize(vXprd(edgeDir, n_adj)));
+                    const sum = vadd(outDirF, outDirFp);
+                    if (vdot(sum, sum) < 1e-9) continue; // flat dihedral
+                    const bisectorInPlane = vnormalize(sum);
+                    const bisectorN = vnormalize(vXprd(edgeDir, bisectorInPlane));
+                    const signedDist = vdot(vsub(fCentroidNorm, va), bisectorN);
+                    if (Math.abs(signedDist) < 1e-9) continue;
+                    const normalToKeep = signedDist > 0 ? bisectorN : smult(-1, bisectorN);
+                    const halfSpace = buildHalfSpaceManifold(va, normalToKeep, 100);
+                    if (halfSpace) {
+                        const next = bodyM.intersect(halfSpace);
+                        bodyM.delete();
+                        halfSpace.delete();
+                        bodyM = next;
+                    }
+                }
+
+                // Apply a half-space clip with the given plane (through V,
+                // normal = N) after orienting N toward F's centroid and
+                // sanity-checking that no other vertex of F lands on the
+                // wrong side. Returns whether a clip was applied.
+                const applyVertexPlane = (V, Nin, vi) => {
+                    if (vdot(Nin, Nin) < 1e-9) return false;
+                    let N = vnormalize(Nin);
+                    const sd0 = vdot(vsub(fCentroidNorm, V), N);
+                    if (Math.abs(sd0) < 1e-9) return false;
+                    if (sd0 < 0) N = smult(-1, N);
+                    for (const pi of face) {
+                        if (pi === vi) continue;
+                        const sd = vdot(vsub(theOrigami.points[pi], V), N);
+                        if (sd < -1e-9) return false; // would cut F itself
+                    }
+                    const halfSpace = buildHalfSpaceManifold(V, N, 100);
+                    if (!halfSpace) return false;
+                    const next = bodyM.intersect(halfSpace);
+                    bodyM.delete();
+                    halfSpace.delete();
+                    bodyM = next;
+                    return true;
+                };
+
+                // Passes (b) and (c) at each vertex V of F:
+                //   D = outward medial-axis seam direction at V,
+                //       approximated as −normalize(Σ inward normals at V).
+                //       Walls extend along (or near) D, so any clip plane
+                //       containing D won't cut into seam-direction material
+                //       even far from V — making infinite half-space clips
+                //       safe.
+                //   (b) Per-vertex plane spanned by D and p (where p is
+                //       perpendicular to F's edge bisector b in F's plane).
+                //       Normal N_b = D × p. Clips F's "outside corner" at V
+                //       (flange/wall material extending in −b direction).
+                //   (c) For each face F'' incident at V that's NOT F and NOT
+                //       edge-adjacent to F at V, a pairwise plane through V
+                //       with normal = (n_F'' − n_F) − ((n_F'' − n_F)·D)·D —
+                //       i.e. the exterior bisector of F and F'' projected
+                //       to be perpendicular to D (so the plane contains D).
+                //       Because the projection preserves the F-vs-F'' split
+                //       and is the SAME plane both F and F'' will compute
+                //       (with opposite kept sides), F's and F'''s molds get
+                //       consistently separated even when F and F'' share
+                //       only a vertex (no edge between them).
+                for (let i = 0; i < Nf && bodyM; i++) {
+                    const vi = face[i];
+                    const V = theOrigami.points[vi];
+                    // D: outward medial-axis direction at V.
+                    let sumN = [0, 0, 0];
+                    for (let fi2 = 0; fi2 < theOrigami.faces.length; fi2++) {
+                        if (!theOrigami.faces[fi2].includes(vi)) continue;
+                        sumN = vadd(sumN, theOrigami.getNorm(fi2));
+                    }
+                    if (vdot(sumN, sumN) < 1e-9) continue;
+                    const D = smult(-1, vnormalize(sumN));
+
+                    // (b) per-vertex (D, p) plane.
+                    const V_prev = theOrigami.points[face[(i - 1 + Nf) % Nf]];
+                    const V_next = theOrigami.points[face[(i + 1) % Nf]];
+                    const e_prev = vnormalize(vsub(V_prev, V));
+                    const e_next = vnormalize(vsub(V_next, V));
+                    const bSum = vadd(e_prev, e_next);
+                    if (vdot(bSum, bSum) >= 1e-9) {
+                        const b = vnormalize(bSum);
+                        const p = vnormalize(vXprd(n_f, b));
+                        applyVertexPlane(V, vXprd(D, p), vi);
+                    }
+                    if (!bodyM) break;
+
+                    // (c) pairwise planes for non-edge-adjacent F'' at V.
+                    const edgeNbrNext = adjAtEdge[i];
+                    const edgeNbrPrev = adjAtEdge[(i - 1 + Nf) % Nf];
+                    for (let fpp = 0; fpp < theOrigami.faces.length && bodyM; fpp++) {
+                        if (fpp === fidx) continue;
+                        if (fpp === edgeNbrNext || fpp === edgeNbrPrev) continue;
+                        if (!theOrigami.faces[fpp].includes(vi)) continue;
+                        const n_fpp = theOrigami.getNorm(fpp);
+                        const diff = vsub(n_fpp, n_f);
+                        const diffPerp = vsub(diff, smult(vdot(diff, D), D));
+                        applyVertexPlane(V, diffPerp, vi);
+                    }
+                }
+            }
 
             // Engrave the face number through the flange (1-indexed). The
             // label sits on the flange's longest face-edge, inset to the
@@ -1639,6 +1771,43 @@ class Ui {
             return polyhedronToManifold(pt, idx.map(face => face.slice().reverse()));
         };
 
+        // Half-space cube manifold for clipping: a large box (side `size`)
+        // with one face on the plane through `pointOnPlane` perpendicular
+        // to `normalToKeep`, extending `size` units in the `normalToKeep`
+        // direction. Used to intersect each face mold with the half-space
+        // on its side of each adjacent-edge bisector plane, so adjacent
+        // molds don't overlap in 3D at concave or sharp dihedrals.
+        const buildHalfSpaceManifold = (pointOnPlane, normalToKeep, size = 100) => {
+            if (!window.manifold) return null;
+            const n = vnormalize(normalToKeep);
+            let xN = Math.abs(n[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+            xN = vnormalize(vsub(xN, smult(vdot(xN, n), n)));
+            const yN = vXprd(n, xN);
+            const halfSize = size / 2;
+            const farPt = vadd(pointOnPlane, smult(size, n));
+            const pt = [
+                vadd(vadd(pointOnPlane, smult(-halfSize, xN)), smult(-halfSize, yN)), // 0
+                vadd(vadd(pointOnPlane, smult(+halfSize, xN)), smult(-halfSize, yN)), // 1
+                vadd(vadd(pointOnPlane, smult(+halfSize, xN)), smult(+halfSize, yN)), // 2
+                vadd(vadd(pointOnPlane, smult(-halfSize, xN)), smult(+halfSize, yN)), // 3
+                vadd(vadd(farPt,        smult(-halfSize, xN)), smult(-halfSize, yN)), // 4
+                vadd(vadd(farPt,        smult(+halfSize, xN)), smult(-halfSize, yN)), // 5
+                vadd(vadd(farPt,        smult(+halfSize, xN)), smult(+halfSize, yN)), // 6
+                vadd(vadd(farPt,        smult(-halfSize, xN)), smult(+halfSize, yN)), // 7
+            ];
+            // CCW-from-outside (cross product OUTWARD), matching the body's
+            // winding convention so the cube is manifold and intersects cleanly.
+            const idx = [
+                [0, 3, 2, 1], // near face (-n outside)
+                [4, 5, 6, 7], // far face (+n outside)
+                [0, 1, 5, 4], // -yN side
+                [1, 2, 6, 5], // +xN side
+                [2, 3, 7, 6], // +yN side
+                [0, 4, 7, 3], // -xN side
+            ];
+            return polyhedronToManifold(pt, idx);
+        };
+
         // Convert a Babylon mesh (with its current world transform applied)
         // into a manifold-3d Manifold solid. Returns null if manifold isn't
         // loaded yet or the mesh has no geometry. Caller owns the returned
@@ -2006,20 +2175,37 @@ class Ui {
             return mesh;
         };
 
-        // Wire the Export Cutter button (created above with the toolbar).
-        // No selection → no-selection modal. Otherwise build the engraved
-        // cutter mesh, transform it onto the build plate, and download as
-        // cutter_<N>.stl (1-indexed to match the on-screen face number).
-        expCutterBtn.onPointerClickObservable.add(() => {
-            if (!theOrigami.selectedF) { noSelectionModal.show(); return; }
-            const fidx = theOrigami.faces.indexOf(theOrigami.selectedF);
-            if (fidx < 0) return;
-            const mesh = buildCutterMesh(fidx);
-            const finalMat = computeBuildPlateTransform(fidx);
-            const buf = meshesToSTL([mesh], finalMat);
-            downloadBuffer(buf, "cutter_" + (fidx + 1) + ".stl");
+        // Wire the Export All button (created above with the toolbar).
+        // Builds a Babylon mesh straight from theOrigami.points/faces, then
+        // emits a binary STL of the whole polyhedron shape (cm→mm). Faces
+        // are stored CW-from-outside (OpenSCAD convention) so each face is
+        // fan-triangulated in REVERSED order — that makes the cross
+        // product point outward, which is what MeshMixer and other STL
+        // viewers expect.
+        expAllBtn.onPointerClickObservable.add(() => {
+            const positions = [];
+            const indices = [];
+            for (const face of theOrigami.faces) {
+                if (face.length < 3) continue;
+                const base = positions.length / 3;
+                for (const pi of face) {
+                    const p = theOrigami.points[pi];
+                    positions.push(p[0], p[1], p[2]);
+                }
+                for (let k = 1; k < face.length - 1; k++) {
+                    indices.push(base, base + k + 1, base + k);
+                }
+            }
+            const vd = new BABYLON.VertexData();
+            vd.positions = positions;
+            vd.indices = indices;
+            const mesh = new BABYLON.Mesh("polyhedron_export", scene);
+            vd.applyToMesh(mesh);
+            const scaleMat = BABYLON.Matrix.Scaling(10, 10, 10);
+            const buf = meshesToSTL([mesh], scaleMat);
+            downloadBuffer(buf, "polyhedron.stl");
             mesh.dispose();
-            console.log(`STL exported for cutter ${fidx + 1}.`);
+            console.log(`STL exported for polyhedron (${theOrigami.faces.length} faces, ${indices.length / 3} triangles).`);
         });
 
         // Build-plate transform for STL export: translate face centroid to
