@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Polyhedron Capture</title>
+<meta name="theme-color" content="#1b1f24">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Capture">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- The shape so far, and what to do next -->
+<main id="modelScreen" class="screen">
+  <header class="top">
+    <input id="nameInput" aria-label="Shape name" autocomplete="off">
+  </header>
+  <div id="installBanner" class="banner" hidden>
+    <span id="installText"></span>
+    <button id="installBtn" class="link" hidden>Install</button>
+    <button id="installClose" class="link" aria-label="Dismiss">✕</button>
+  </div>
+  <div class="previewWrap">
+    <canvas id="preview"></canvas>
+    <div id="emptyState" class="empty">
+      <p><strong>Capture the first face</strong></p>
+      <p>Hold the phone square-on to the face. Step back and use 2× zoom if you can: it reduces perspective error.</p>
+    </div>
+  </div>
+  <p id="status" class="status" role="status"></p>
+  <div class="actions">
+    <label id="takeBtn" class="btn primary">Take photo
+      <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden>
+    </label>
+    <label id="galleryBtn" class="btn">From gallery
+      <input id="galleryInput" type="file" accept="image/*" hidden>
+    </label>
+    <button id="closeBtn" class="btn">Close shape</button>
+    <button id="undoBtn" class="btn">Undo</button>
+    <button id="shareBtn" class="btn">Export</button>
+    <button id="newBtn" class="btn">New</button>
+  </div>
+</main>
+
+<!-- Outlining a face on its photo, then joining it to the shape -->
+<main id="photoScreen" class="screen" hidden>
+  <p id="photoHint" class="hint" role="status"></p>
+  <div class="photoWrap"><canvas id="photo"></canvas></div>
+
+  <form id="joinForm" class="joinForm" hidden>
+    <div class="row">
+      <span class="label">Shared side</span>
+      <div id="sideChips" class="chips"></div>
+    </div>
+    <label id="lengthRow" class="row">
+      <span class="label">Real length of this side (cm)</span>
+      <input id="lengthInput" inputmode="decimal" autocomplete="off">
+    </label>
+    <div id="angleRow">
+      <label class="row">
+        <span class="label">Inclinometer angle (°)</span>
+        <input id="angleInput" inputmode="decimal" autocomplete="off">
+      </label>
+      <div class="row">
+        <span class="label">Edge</span>
+        <div class="segmented">
+          <label><input type="radio" name="edgeType" value="convex" checked><span>Convex</span></label>
+          <label><input type="radio" name="edgeType" value="concave"><span>Concave</span></label>
+        </div>
+      </div>
+    </div>
+  </form>
+
+  <div id="photoBar" class="actions"></div>
+</main>
+
+<dialog id="dialog"></dialog>
+
+<script type="module" src="ui.js"></script>
+</body>
+</html>
