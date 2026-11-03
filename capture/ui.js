@@ -2,7 +2,7 @@
 
 import {
     freeSides, freeLoops, closeLoop, isClosed, faceFlatness,
-    orderPixelCorners, isSimplePolygon,
+    orderPixelCorners, isSimplePolygon, adjacentFreeSides,
 } from './geometry.js';
 import { Session, IdbStore, shareAttempts, shareWithFallback } from './session.js';
 import { Preview } from './preview.js';
@@ -15,6 +15,11 @@ const FLATTEN_WARN_CM = 0.1;   // offer triangles if flattening moves a corner f
 const HANDLE_RADIUS = 26;      // screen pixels within which a corner can be grabbed
 const SIDE_PICK_RADIUS = 30;
 const TAP_MOVE = 8;
+const CHECK_RATIO_WARN = 0.05; // photo vs selected sides: length ratio difference worth flagging
+const CHECK_ANGLE_WARN = 3;    // degrees
+const CHECK_RATIO_NOTE = 0.01;
+const CHECK_ANGLE_NOTE = 1;
+const CHECK_REACH_WARN = 3;    // face reach, in multiples of the shorter selected side
 
 const mm = cm => `${(cm * 10).toFixed(1)} mm`;
 const parseNumber = s => parseFloat(String(s).replace(',', '.')); // phones may type a decimal comma
@@ -65,12 +70,36 @@ const alertDialog = (title, text) => showDialog({ title, text, buttons: [{ label
 
 // -------------------------------------------------------------- model screen
 
+// The second selected side, when joining a new face to two sides at once.
+let secondSide = null;
+let pickingSecond = false;
+
+const sameSide = (p, q) => !!p && !!q && p.face === q.face && p.side === q.side;
+
+function clearSecondSide() {
+    secondSide = null;
+    pickingSecond = false;
+}
+
+// The two selected sides as corners {a, b, c}, if they meet at a corner.
+function selectedPair() {
+    if (!secondSide || !session.nextSide) return null;
+    return adjacentFreeSides(session.model, session.nextSide, secondSide);
+}
+
 const preview = new Preview($('preview'), index => {
     const s = orderedSides()[index];
-    if (s) {
-        session.setNextSide({ face: s.face, side: s.side });
-        renderModel();
+    if (!s) return;
+    const ref = { face: s.face, side: s.side };
+    if (pickingSecond) {
+        if (sameSide(ref, session.nextSide)) return; // still waiting for a different side
+        secondSide = ref;
+        pickingSecond = false;
+    } else {
+        secondSide = null;
+        session.setNextSide(ref);
     }
+    renderModel();
 });
 
 function currentFace() {
@@ -101,18 +130,26 @@ function renderModel(note) {
         selected = 0;
         session.setNextSide({ face: sides[0].face, side: sides[0].side });
     }
-    preview.update(session.model, sides, selected, currentFace());
+    const second = secondSide ? sides.findIndex(s => sameSide(s, secondSide)) : -1;
+    if (second < 0) secondSide = null;
+    const pair = selectedPair();
+    const notAtCorner = !!secondSide && !pair;
+    preview.update(session.model, sides, [selected, second].filter(i => i >= 0), currentFace());
 
     const empty = session.isEmpty;
     const closed = isClosed(session.model);
+    const noPhoto = closed || notAtCorner || pickingSecond;
     $('emptyState').hidden = !empty;
     $('nameInput').value = session.name;
     $('undoBtn').disabled = session.undoStack.length === 0;
     $('closeBtn').disabled = empty || closed;
     $('shareBtn').disabled = empty;
     $('newBtn').disabled = empty;
-    $('takeBtn').classList.toggle('disabled', closed);
-    $('galleryBtn').classList.toggle('disabled', closed);
+    $('takeBtn').classList.toggle('disabled', noPhoto);
+    $('galleryBtn').classList.toggle('disabled', noPhoto);
+    $('triangleBtn').hidden = !pair;
+    $('twoSidesBtn').disabled = sides.length < 2;
+    $('twoSidesBtn').textContent = pickingSecond || secondSide ? 'Cancel 2 sides' : 'Select 2 sides';
 
     if (note) {
         setStatus(note.text, note.warn);
@@ -120,10 +157,35 @@ function renderModel(note) {
         setStatus('');
     } else if (closed) {
         setStatus(`Closed shape with ${session.faceCount} faces. Ready to export.`);
+    } else if (pickingSecond) {
+        setStatus(`Side ${selected + 1} selected. Tap the second side.`);
+    } else if (notAtCorner) {
+        setStatus(`Sides ${selected + 1} and ${second + 1} don't meet at a corner. Tap Cancel and pick two sides that do.`, true);
+    } else if (pair) {
+        setStatus(`Sides ${selected + 1} and ${second + 1} selected. Add a triangle, or take a photo if the face has more sides. No angle needed.`);
     } else {
         setStatus(`Tap a number to choose where the next face attaches. Selected: side ${selected + 1}.`);
     }
 }
+
+$('twoSidesBtn').addEventListener('click', () => {
+    if (pickingSecond || secondSide) clearSecondSide();
+    else pickingSecond = true;
+    renderModel();
+});
+
+$('triangleBtn').addEventListener('click', async () => {
+    const pair = selectedPair();
+    if (!pair) return;
+    try {
+        session.addTriangle(pair);
+    } catch (err) {
+        await alertDialog('Could not add the triangle', err.message);
+        return;
+    }
+    clearSecondSide();
+    renderModel();
+});
 
 function flatnessNote() {
     const worst = Math.max(0, ...session.model.f.map(f => faceFlatness(session.model, f)));
@@ -137,6 +199,7 @@ $('nameInput').addEventListener('change', e => {
 
 $('undoBtn').addEventListener('click', () => {
     session.undo();
+    clearSecondSide();
     renderModel();
 });
 
@@ -149,6 +212,7 @@ $('newBtn').addEventListener('click', async () => {
     if (ok) {
         session.reset();
         session.save();
+        clearSecondSide();
         renderModel();
     }
 });
@@ -190,11 +254,13 @@ $('closeBtn').addEventListener('click', async () => {
                 await alertDialog('Could not close', e.message);
                 return;
             }
+            clearSecondSide();
             renderModel();
             return;
         }
     }
     const res = session.close(loop);
+    clearSecondSide();
     const moved = res.maxMove > 0.001 ? ` Corners moved by up to ${mm(res.maxMove)}.` : '';
     renderModel(isClosed(session.model)
         ? { text: `Closed shape with ${session.faceCount} faces.${moved}${flatnessNote()}` }
@@ -274,6 +340,8 @@ function startPhoto(image) {
         manual: false,
         stage: 'outline',
         joinSide: null,
+        pair: selectedPair(), // set when joining to two sides, so no angle is needed
+        joinSides: [],
         view: { k: 1, ox: 0, oy: 0 },
         fitted: false,
         magnify: null,
@@ -356,16 +424,49 @@ function outlineDone() {
     ph.selectedCorner = -1;
     ph.message = null;
     ph.joinSide = null;
+    ph.joinSides = [];
     renderPhoto();
+}
+
+const isJoinSide = i => (ph.pair ? ph.joinSides.includes(i) : ph.joinSide === i);
+
+function pickJoinSide(i) {
+    ph.message = null;
+    if (!ph.pair) {
+        ph.joinSide = i;
+    } else if (ph.joinSides.includes(i)) {
+        ph.joinSides = ph.joinSides.filter(s => s !== i);
+    } else {
+        ph.joinSides.push(i);
+        if (ph.joinSides.length > 2) ph.joinSides.shift();
+    }
+    renderPhoto();
+}
+
+// The first of two photo sides that meet at a corner, in on-screen order, or
+// null. Winding then decides which photo side matches which selected side.
+function firstOfPickedSides() {
+    if (ph.joinSides.length !== 2) return null;
+    const [p, q] = ph.joinSides;
+    const n = ph.corners.length;
+    if ((p + 1) % n === q) return p;
+    if ((q + 1) % n === p) return q;
+    return null;
 }
 
 function renderJoin() {
     const first = session.isEmpty;
     $('joinForm').hidden = false;
     $('lengthRow').hidden = !first;
-    $('angleRow').hidden = first;
+    $('angleRow').hidden = first || !!ph.pair;
+    $('joinLabel').textContent = ph.pair ? 'Shared sides' : 'Shared side';
+    const pairTogether = firstOfPickedSides() !== null;
     if (ph.message) {
         setHint(ph.message.text, ph.message.warn);
+    } else if (ph.pair) {
+        setHint(ph.joinSides.length === 2 && !pairTogether
+            ? 'Those two sides don\'t meet at a corner. Pick two that do.'
+            : 'Pick the two sides of this face that join the two selected sides.', ph.joinSides.length === 2 && !pairTogether);
     } else if (first) {
         setHint('Pick a side you can measure, then type its real length.');
     } else {
@@ -377,16 +478,46 @@ function renderJoin() {
     ph.corners.forEach((_, i) => {
         const c = document.createElement('button');
         c.type = 'button';
-        c.className = 'chip' + (ph.joinSide === i ? ' on' : '');
+        c.className = 'chip' + (isJoinSide(i) ? ' on' : '');
         c.textContent = String(i + 1);
-        c.addEventListener('click', () => { ph.joinSide = i; ph.message = null; renderPhoto(); });
+        c.addEventListener('click', () => pickJoinSide(i));
         chips.append(c);
     });
 
     setBar([
         { label: 'Back', onClick: () => { ph.stage = 'outline'; ph.message = null; renderPhoto(); } },
-        { label: first ? 'Add first face' : 'Place face', primary: true, disabled: ph.joinSide === null, onClick: placeFace },
+        {
+            label: first ? 'Add first face' : 'Place face',
+            primary: true,
+            disabled: ph.pair ? !pairTogether : ph.joinSide === null,
+            onClick: placeFace,
+        },
     ]);
+}
+
+// What the comparison between the photo and the selected sides found, if notable.
+function checkNote(check) {
+    const parts = [];
+    const warnMatch = check.ratioDiff > CHECK_RATIO_WARN || check.angleDiff > CHECK_ANGLE_WARN;
+    if (check.ratioDiff > CHECK_RATIO_NOTE || check.angleDiff > CHECK_ANGLE_NOTE) {
+        parts.push(`The photo differs from the selected sides by ${(check.ratioDiff * 100).toFixed(1)}% in length ratio and ${check.angleDiff.toFixed(1)}° in angle.`);
+        if (warnMatch) parts.push('Check you picked the right sides and that the photo was close to square-on.');
+    }
+    const warnReach = check.reach > CHECK_REACH_WARN;
+    if (warnReach) parts.push('The far corners are less certain, because the selected sides are short compared with this face.');
+    return parts.length ? { text: parts.join(' '), warn: warnMatch || warnReach } : null;
+}
+
+async function placeFaceFromSides(corners, image) {
+    const args = { corners, side: firstOfPickedSides(), pair: ph.pair };
+    const placement = session.previewFaceFromSides(args);
+    const accepted = await confirmMerges(placement);
+    if (accepted === null) return;
+    session.addFaceFromSides({ ...args, image, placement, acceptedMerges: accepted });
+    clearSecondSide();
+    leavePhoto();
+    const note = checkNote(placement.check);
+    if (note) renderModel(note);
 }
 
 function selectedSideNumber() {
@@ -398,6 +529,10 @@ async function placeFace() {
     const image = { w: ph.image.width, h: ph.image.height };
     const corners = ph.corners.map(c => c.slice());
     try {
+        if (ph.pair) {
+            await placeFaceFromSides(corners, image);
+            return;
+        }
         if (session.isEmpty) {
             const lengthCm = parseNumber($('lengthInput').value);
             if (!(lengthCm > 0)) {
@@ -503,14 +638,17 @@ function drawPhoto() {
         ctx.strokeStyle = '#35c37d';
         ctx.stroke();
     }
-    if (ph.stage === 'join' && ph.joinSide !== null) {
-        const a = pts[ph.joinSide], b = pts[(ph.joinSide + 1) % n];
-        ctx.beginPath();
-        ctx.moveTo(a[0], a[1]);
-        ctx.lineTo(b[0], b[1]);
-        ctx.lineWidth = 6;
-        ctx.strokeStyle = '#f0a33a';
-        ctx.stroke();
+    if (ph.stage === 'join') {
+        for (let i = 0; i < n; i++) {
+            if (!isJoinSide(i)) continue;
+            const a = pts[i], b = pts[(i + 1) % n];
+            ctx.beginPath();
+            ctx.moveTo(a[0], a[1]);
+            ctx.lineTo(b[0], b[1]);
+            ctx.lineWidth = 6;
+            ctx.strokeStyle = '#f0a33a';
+            ctx.stroke();
+        }
     }
     pts.forEach((p, i) => {
         ctx.beginPath();
@@ -527,7 +665,7 @@ function drawPhoto() {
         ctx.textBaseline = 'middle';
         for (let i = 0; i < n; i++) {
             const [x, y] = sideMid(i);
-            const on = ph.joinSide === i;
+            const on = ph.stage === 'join' && isJoinSide(i);
             ctx.beginPath();
             ctx.arc(x, y, 14, 0, 2 * Math.PI);
             ctx.fillStyle = on ? '#f0a33a' : '#1b1f24';
@@ -686,8 +824,8 @@ function onTap(p, handle) {
             const d = Math.hypot(x - p[0], y - p[1]);
             if (d < bestD) { bestD = d; best = i; }
         });
-        if (best >= 0) ph.joinSide = best;
-        renderPhoto();
+        if (best >= 0) pickJoinSide(best);
+        else renderPhoto();
         return;
     }
     if (handle >= 0) {

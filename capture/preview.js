@@ -13,7 +13,7 @@ export class Preview {
         this.onPick = onPick;
         this.model = { pt: [], f: [] };
         this.sides = [];
-        this.selected = -1;
+        this.selected = []; // indices into sides
         this.current = -1;
         this.yaw = -0.6;
         this.pitch = 0.75;
@@ -130,7 +130,7 @@ export class Preview {
         const accent = css('--accent'), free = css('--free');
         this.sides.forEach((s, index) => {
             const A = scr(rot[s.a]), B = scr(rot[s.b]);
-            const isSel = index === this.selected;
+            const isSel = this.selected.includes(index);
             ctx.beginPath();
             ctx.moveTo(A[0], A[1]);
             ctx.lineTo(B[0], B[1]);

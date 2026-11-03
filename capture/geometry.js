@@ -211,9 +211,16 @@ export function computePlacement(model, shape, side, existing, angleDeg, opts = 
     positions[c0i] = B.slice();
     positions[c1i] = A.slice();
 
-    // Merge candidates: closest free vertex within tolerance of each corner.
+    const merges = findMerges(model, positions, vertex, opts);
+    return { positions, vertex, merges, shapeScale: s };
+}
+
+// Merge candidates: closest free vertex within tolerance of each new corner.
+function findMerges(model, positions, vertex, opts) {
+    const N = positions.length;
     const minSide = Math.min(...positions.map((p, i) => dist(p, positions[(i + 1) % N])));
     const tol = opts.mergeTolerance ?? 0.15 * minSide;
+    const taken = new Set(vertex.filter(v => v !== null));
     const freeV = new Set();
     freeSides(model).forEach(fs => { freeV.add(fs.a); freeV.add(fs.b); });
     const merges = [];
@@ -221,13 +228,95 @@ export function computePlacement(model, shape, side, existing, angleDeg, opts = 
         if (vertex[corner] !== null) return;
         let best = -1, bestD = tol;
         freeV.forEach(v => {
-            if (v === aIdx || v === bIdx) return;
+            if (taken.has(v)) return;
             const d = dist(p, model.pt[v]);
             if (d <= bestD) { bestD = d; best = v; }
         });
         if (best >= 0) merges.push({ corner, vertex: best, gap: bestD });
     });
-    return { positions, vertex, merges, shapeScale: s };
+    return merges;
+}
+
+// ----------------------------------------------- a face from two selected sides
+
+const MIN_CORNER_SIN = 0.1; // about 6 degrees from straight: too unstable to fit a photo to
+const MIN_TRIANGLE_SIN = 0.01;
+
+// Two free sides that meet at a corner, as vertices {a, b, c} with the free
+// sides running a -> b -> c, or null if they don't form a corner of one hole.
+export function adjacentFreeSides(model, s1, s2) {
+    const resolve = s => {
+        const f = model.f[s.face];
+        return f ? { a: f[s.side], b: f[(s.side + 1) % f.length] } : null;
+    };
+    const p = resolve(s1), q = resolve(s2);
+    if (!p || !q) return null;
+    const free = freeSides(model);
+    const isFree = e => free.some(s => s.a === e.a && s.b === e.b);
+    if (!isFree(p) || !isFree(q)) return null;
+    const forward = p.b === q.a, backward = q.b === p.a;
+    if (forward === backward) return null; // not touching, or the same two corners
+    return forward ? { a: p.a, b: p.b, c: q.b } : { a: q.a, b: q.b, c: p.b };
+}
+
+const sinBetween = (u, v) => length(cross(u, v)) / (length(u) * length(v));
+
+// A triangle across two sides that meet at a corner. Needs no photo or angle,
+// because all three corners are already known.
+export function triangleFromSides(model, pair) {
+    const { a, b, c } = pair;
+    const A = model.pt[a], B = model.pt[b], C = model.pt[c];
+    if (sinBetween(sub(C, B), sub(A, B)) < MIN_TRIANGLE_SIN) {
+        throw new Error('These two sides are in a straight line, so they cannot form a triangle');
+    }
+    return { positions: [C.slice(), B.slice(), A.slice()], vertex: [c, b, a], merges: [] };
+}
+
+// Places a photographed face using two selected sides instead of an angle.
+//   side: the side of `shape` that runs c -> b, so side+1 runs b -> a
+// The three known corners fix the plane, and an affine fit lands them exactly,
+// which also removes most of the error from a photo that wasn't square-on.
+// `check` compares the photo with the known sides, to reveal a bad photo.
+export function computePlacementFromSides(model, shape, side, pair, opts = {}) {
+    const N = shape.length;
+    if (N < 3) throw new Error('A face needs at least three corners');
+    const { a, b, c } = pair;
+    const iC = side, iB = (side + 1) % N, iA = (side + 2) % N;
+    const pB = shape[iB];
+    const u = [shape[iC][0] - pB[0], shape[iC][1] - pB[1]];
+    const v = [shape[iA][0] - pB[0], shape[iA][1] - pB[1]];
+    const lenU = Math.hypot(u[0], u[1]), lenV = Math.hypot(v[0], v[1]);
+    const det = u[0] * v[1] - u[1] * v[0];
+    if (Math.abs(det) < MIN_CORNER_SIN * lenU * lenV) {
+        throw new Error('The corner between those sides is too close to a straight line to fit the photo to it');
+    }
+    const A = model.pt[a], B = model.pt[b], C = model.pt[c];
+    const U = sub(C, B), V = sub(A, B);
+    if (sinBetween(U, V) < MIN_CORNER_SIN) {
+        throw new Error('The two selected sides are too close to a straight line to fit the photo to them');
+    }
+
+    const positions = shape.map(p => {
+        const d = [p[0] - pB[0], p[1] - pB[1]];
+        const s = (d[0] * v[1] - d[1] * v[0]) / det;
+        const t = (u[0] * d[1] - u[1] * d[0]) / det;
+        return add(add(B, scale(U, s)), scale(V, t));
+    });
+    const vertex = positions.map(() => null);
+    vertex[iC] = c; vertex[iB] = b; vertex[iA] = a;
+    positions[iC] = C.slice(); positions[iB] = B.slice(); positions[iA] = A.slice();
+
+    const angleOf = (cosine) => Math.acos(Math.max(-1, Math.min(1, cosine))) * 180 / Math.PI;
+    const photoAngle = angleOf((u[0] * v[0] + u[1] * v[1]) / (lenU * lenV));
+    const modelAngle = angleOf(dot(U, V) / (length(U) * length(V)));
+    const extent = Math.max(...shape.map(p => Math.hypot(p[0] - pB[0], p[1] - pB[1])));
+    const check = {
+        ratioDiff: Math.abs((lenU / lenV) / (length(U) / length(V)) - 1),
+        angleDiff: Math.abs(photoAngle - modelAngle),
+        // How far the face reaches, compared with the sides it was fitted to.
+        reach: extent / Math.min(lenU, lenV),
+    };
+    return { positions, vertex, merges: findMerges(model, positions, vertex, opts), check };
 }
 
 // Adds the face, merging the chosen candidates. Existing corners keep their

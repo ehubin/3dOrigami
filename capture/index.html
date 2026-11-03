@@ -38,6 +38,8 @@
     <label id="galleryBtn" class="btn">From gallery
       <input id="galleryInput" type="file" accept="image/*" hidden>
     </label>
+    <button id="triangleBtn" class="btn primary" hidden>Add triangle</button>
+    <button id="twoSidesBtn" class="btn">Select 2 sides</button>
     <button id="closeBtn" class="btn">Close shape</button>
     <button id="undoBtn" class="btn">Undo</button>
     <button id="shareBtn" class="btn">Export</button>
@@ -52,7 +54,7 @@
 
   <form id="joinForm" class="joinForm" hidden>
     <div class="row">
-      <span class="label">Shared side</span>
+      <span id="joinLabel" class="label">Shared side</span>
       <div id="sideChips" class="chips"></div>
     </div>
     <label id="lengthRow" class="row">

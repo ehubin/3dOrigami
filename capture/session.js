@@ -3,7 +3,7 @@
 
 import {
     emptyModel, cloneModel, pixelsToShape, placeFirstFace, computePlacement, commitPlacement,
-    closeLoop, closeLoopTriangulated, modelToExport,
+    closeLoop, closeLoopTriangulated, modelToExport, triangleFromSides, computePlacementFromSides,
 } from './geometry.js';
 
 export const FORMAT_VERSION = 1;
@@ -68,6 +68,37 @@ export class Session {
         this.records.push({
             type: 'face', method: 'parallel', corners, image, side, existing,
             angleDeg, measuredAngle, concave,
+            merges: acceptedMerges.map(m => ({ corner: m.corner, vertex: m.vertex, gap: m.gap })),
+            face: faceIndex,
+        });
+        this.nextSide = null;
+        this.save();
+        return faceIndex;
+    }
+
+    // A triangle across two sides that meet at a corner, with no measurements.
+    addTriangle(pair) {
+        const { model, faceIndex } = commitPlacement(this.model, triangleFromSides(this.model, pair));
+        this._snapshot();
+        this.model = model;
+        this.records.push({ type: 'triangle', pair, face: faceIndex });
+        this.nextSide = null;
+        this.save();
+        return faceIndex;
+    }
+
+    // Where a photographed face lands when fitted to two sides, without changing anything.
+    previewFaceFromSides({ corners, side, pair }) {
+        return computePlacementFromSides(this.model, pixelsToShape(corners), side, pair);
+    }
+
+    addFaceFromSides({ corners, image, side, pair, placement, acceptedMerges }) {
+        const { model, faceIndex } = commitPlacement(this.model, placement, acceptedMerges);
+        this._snapshot();
+        this.model = model;
+        this.records.push({
+            type: 'faceFromSides', method: 'parallel', corners, image, side, pair,
+            check: placement.check,
             merges: acceptedMerges.map(m => ({ corner: m.corner, vertex: m.vertex, gap: m.gap })),
             face: faceIndex,
         });
