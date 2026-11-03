@@ -4,6 +4,7 @@
 import {
     emptyModel, cloneModel, pixelsToShape, placeFirstFace, computePlacement, commitPlacement,
     closeLoop, closeLoopTriangulated, modelToExport, computePlacementFromChain, flattenIfWarped,
+    stitchSides,
 } from './geometry.js';
 
 export const FORMAT_VERSION = 1;
@@ -98,6 +99,18 @@ export class Session {
         this.nextSide = null;
         this.save();
         return flat;
+    }
+
+    // Makes two free sides into one. Faces stay in place in the list, so earlier
+    // records' face numbers still hold, but vertex numbers change from here on.
+    stitch(s1, s2) {
+        const res = stitchSides(this.model, s1, s2);
+        this._snapshot();
+        this.model = res.model;
+        this.records.push({ type: 'stitch', sides: [s1, s2], gap: res.gap, maxMove: res.maxMove });
+        this.nextSide = null;
+        this.save();
+        return res;
     }
 
     // Adds one face across a hole, or across a chain of sides with no measurements.

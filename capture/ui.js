@@ -2,7 +2,7 @@
 
 import {
     freeSides, freeLoops, closeLoop, isClosed, faceFlatness,
-    orderPixelCorners, isSimplePolygon, chainFromSides,
+    orderPixelCorners, isSimplePolygon, chainFromSides, stitchSides,
 } from './geometry.js';
 import { Session, IdbStore, shareAttempts, shareWithFallback } from './session.js';
 import { Preview } from './preview.js';
@@ -164,6 +164,7 @@ function renderModel(note) {
         const corners = chain.vertices.length;
         $('fillBtn').textContent = chain.closed ? 'Fill hole' : corners === 3 ? 'Add triangle' : `Add ${corners}-sided face`;
     }
+    $('stitchBtn').hidden = known !== 2;
     $('selectBtn').disabled = sides.length < 2;
     $('selectBtn').textContent = selecting ? 'Cancel selection' : 'Select sides';
 
@@ -175,13 +176,16 @@ function renderModel(note) {
         setStatus(`Closed shape with ${session.faceCount} faces. Ready to export.`);
     } else if (selecting && known === 1) {
         setStatus(`Side ${selected + 1} selected. Tap the other sides of the new face.`);
+    } else if (broken && known === 2) {
+        setStatus(`Sides ${numbers} selected. Stitch them if they should be one side, or tap another number to add to the selection.`);
     } else if (broken) {
         setStatus(`Sides ${numbers} don't join end to end. Tap a number to add or remove a side.`, true);
     } else if (chain && chain.closed) {
         setStatus(`Sides ${numbers} make a complete hole. Fill it with one face.`);
     } else if (chain) {
         const button = $('fillBtn').textContent;
-        setStatus(`Sides ${numbers} selected. Use ${button} if only one side is missing, or take a photo if more are. No angle needed.`);
+        const stitch = known === 2 ? ' Or stitch them if they should be one side.' : '';
+        setStatus(`Sides ${numbers} selected. Use ${button} if only one side is missing, or take a photo if more are. No angle needed.${stitch}`);
     } else {
         setStatus(`Tap a number to choose where the next face attaches. Selected: side ${selected + 1}.`);
     }
@@ -196,6 +200,34 @@ $('selectBtn').addEventListener('click', () => {
 $('fillBtn').addEventListener('click', () => {
     const chain = selectedChain();
     if (chain) fillAcross(chain.vertices);
+});
+
+$('stitchBtn').addEventListener('click', async () => {
+    if (extraSides.length !== 1 || !session.nextSide) return;
+    const [s1, s2] = [session.nextSide, extraSides[0]];
+    try {
+        const trial = stitchSides(session.model, s1, s2);
+        if (trial.maxMove > FLATTEN_WARN_CM) {
+            const ok = await showDialog({
+                title: 'Stitch these sides?',
+                text: `The sides are up to ${mm(trial.gap)} apart, so stitching moves corners by up to ${mm(trial.maxMove)}. If that is more than you expected, check that these are the right sides.`,
+                buttons: [
+                    { label: 'Stitch', value: true, primary: true },
+                    { label: 'Cancel', value: false },
+                ],
+            });
+            if (!ok) return;
+        }
+        const res = session.stitch(s1, s2);
+        clearSelection();
+        const moved = res.maxMove > 0.005 ? ` Corners moved by up to ${mm(res.maxMove)}.` : '';
+        renderModel({
+            text: `Sides stitched.${moved}${flatnessNote()}`,
+            warn: res.maxMove > FLATTEN_WARN_CM,
+        });
+    } catch (err) {
+        await alertDialog('Could not stitch these sides', err.message);
+    }
 });
 
 function flatnessNote() {

@@ -553,6 +553,82 @@ export function closeLoopTriangulated(model, loop) {
     return out;
 }
 
+// ------------------------------------------------------------------- stitching
+
+// Makes two free sides into one shared side. Faces wind consistently, so the
+// sides must run in opposite directions once joined: each side's start joins
+// the other's end. Joined corners move to their midpoint, then any warped face
+// touching them is flattened. Returns the new model, without changing the old.
+export function stitchSides(model, s1, s2) {
+    const resolve = s => {
+        const f = model.f[s.face];
+        return f ? { a: f[s.side], b: f[(s.side + 1) % f.length] } : null;
+    };
+    const p = resolve(s1), q = resolve(s2);
+    const free = freeSides(model);
+    const isFree = e => e && free.some(s => s.a === e.a && s.b === e.b);
+    if (!isFree(p) || !isFree(q)) throw new Error('Only free sides can be stitched');
+    if (p.a === q.a && p.b === q.b) throw new Error('Pick two different sides to stitch');
+
+    // Groups of corners that become one, keeping each group's lowest index.
+    const parent = new Map();
+    const find = v => {
+        while (parent.has(v)) v = parent.get(v);
+        return v;
+    };
+    let gap = 0;
+    for (const [x, y] of [[p.a, q.b], [p.b, q.a]]) {
+        if (x === y) continue;
+        gap = Math.max(gap, dist(model.pt[x], model.pt[y]));
+        const rx = find(x), ry = find(y);
+        if (rx !== ry) parent.set(Math.max(rx, ry), Math.min(rx, ry));
+    }
+
+    const faces = model.f.map(f => f.map(find));
+    faces.forEach(f => {
+        if (new Set(f).size !== f.length) {
+            throw new Error('Stitching these would collapse a face, because it contains both corners');
+        }
+    });
+    const present = new Set();
+    faces.forEach(f => f.forEach((a, i) => {
+        const key = `${a},${f[(i + 1) % f.length]}`;
+        if (present.has(key)) throw new Error('Stitching these would give an edge three faces, or turn a face inside out');
+        present.add(key);
+    }));
+
+    // Each kept corner moves to the average of the corners joining it.
+    const sum = new Map(), count = new Map();
+    model.pt.forEach((pos, v) => {
+        const r = find(v);
+        sum.set(r, add(sum.get(r) || [0, 0, 0], pos));
+        count.set(r, (count.get(r) || 0) + 1);
+    });
+    const renumber = new Map();
+    const pt = [];
+    model.pt.forEach((_, v) => {
+        if (find(v) !== v) return;
+        renumber.set(v, pt.length);
+        pt.push(scale(sum.get(v), 1 / count.get(v)));
+    });
+    const newIndex = v => renumber.get(find(v));
+
+    const touched = new Set([...parent.keys()].map(find));
+    const isTouched = f => f.some(v => touched.has(v));
+    const out = { pt, f: faces.map(f => f.map(v => renumber.get(v))) };
+    faces.forEach((f, i) => {
+        if (isTouched(f)) out.f[i] = rotateToConvexStart(pt, out.f[i]);
+    });
+
+    const warped = faces.some((f, i) => isTouched(f) && faceFlatness(out, out.f[i]) > 1e-6);
+    const result = warped || (isClosed(out) && out.f.some(f => faceFlatness(out, f) > 1e-6))
+        ? flattenFaces(out).model
+        : out;
+    const maxMove = Math.max(0, ...model.pt.map((pos, v) => dist(pos, result.pt[newIndex(v)])));
+    const maxFlatness = Math.max(0, ...result.f.map(f => faceFlatness(result, f)));
+    return { model: result, gap, maxMove, maxFlatness };
+}
+
 // ---------------------------------------------------------------------- export
 
 // Capture works in right-handed coordinates, but the app runs on Babylon's

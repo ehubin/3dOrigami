@@ -5,7 +5,21 @@ import { faceNormal, faceCentroid, sub } from './geometry.js';
 const TAP_MOVE = 8;  // pixels a pointer can move and still count as a tap
 const PICK_RADIUS = 28;
 
+const LABEL_SPACING = 30;
+
 const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+// Where to draw a side's number so it can be tapped: sides lying on top of each
+// other would otherwise have numbers in the same place. Moves along the side,
+// and two such sides run in opposite directions, so their numbers separate.
+export function spreadLabel(x, y, dx, dy, placed) {
+    const free = (px, py) => placed.every(l => Math.hypot(l.x - px, l.y - py) >= LABEL_SPACING);
+    for (let step = 0; step < 7; step++) {
+        const dist = LABEL_SPACING * (step % 2 ? (step + 1) / 2 : -step / 2);
+        if (free(x + dx * dist, y + dy * dist)) return [x + dx * dist, y + dy * dist];
+    }
+    return [x, y];
+}
 
 export class Preview {
     constructor(canvas, onPick) {
@@ -128,6 +142,7 @@ export class Preview {
         const centre = model.pt.reduce((a, p) => [a[0] + p[0], a[1] + p[1], a[2] + p[2]], [0, 0, 0])
             .map(v => v / model.pt.length);
         const accent = css('--accent'), free = css('--free');
+        canvas.labels = this.labels;
         this.sides.forEach((s, index) => {
             const A = scr(rot[s.a]), B = scr(rot[s.b]);
             const isSel = this.selected.includes(index);
@@ -141,9 +156,15 @@ export class Preview {
             const mid3 = model.pt[s.a].map((v, i) => (v + model.pt[s.b][i]) / 2);
             const out = this._rotate(sub(mid3, centre));
             const len = Math.hypot(out[0], out[1]) || 1;
-            const lx = (A[0] + B[0]) / 2 + (out[0] / len) * 18;
-            const ly = (A[1] + B[1]) / 2 - (out[1] / len) * 18;
-            this.labels.push({ x: lx, y: ly, index });
+            const sideLen = Math.hypot(B[0] - A[0], B[1] - A[1]) || 1;
+            const [lx, ly] = spreadLabel(
+                (A[0] + B[0]) / 2 + (out[0] / len) * 18,
+                (A[1] + B[1]) / 2 - (out[1] / len) * 18,
+                (B[0] - A[0]) / sideLen,
+                (B[1] - A[1]) / sideLen,
+                this.labels,
+            );
+            this.labels.push({ x: lx, y: ly, index, a: s.a, b: s.b });
             ctx.beginPath();
             ctx.arc(lx, ly, 13, 0, 2 * Math.PI);
             ctx.fillStyle = isSel ? accent : free;
