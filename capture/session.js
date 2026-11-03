@@ -3,7 +3,7 @@
 
 import {
     emptyModel, cloneModel, pixelsToShape, placeFirstFace, computePlacement, commitPlacement,
-    closeLoop, closeLoopTriangulated, modelToExport, triangleFromSides, computePlacementFromSides,
+    closeLoop, closeLoopTriangulated, modelToExport, computePlacementFromChain, flattenIfWarped,
 } from './geometry.js';
 
 export const FORMAT_VERSION = 1;
@@ -76,42 +76,39 @@ export class Session {
         return faceIndex;
     }
 
-    // A triangle across two sides that meet at a corner, with no measurements.
-    addTriangle(pair) {
-        const { model, faceIndex } = commitPlacement(this.model, triangleFromSides(this.model, pair));
-        this._snapshot();
-        this.model = model;
-        this.records.push({ type: 'triangle', pair, face: faceIndex });
-        this.nextSide = null;
-        this.save();
-        return faceIndex;
+    // Where a photographed face lands when fitted to selected sides, without changing anything.
+    previewFaceFromChain({ corners, side, chain }) {
+        return computePlacementFromChain(this.model, pixelsToShape(corners), side, chain);
     }
 
-    // Where a photographed face lands when fitted to two sides, without changing anything.
-    previewFaceFromSides({ corners, side, pair }) {
-        return computePlacementFromSides(this.model, pixelsToShape(corners), side, pair);
-    }
-
-    addFaceFromSides({ corners, image, side, pair, placement, acceptedMerges }) {
+    // The known corners rarely lie exactly in one plane, so this flattens the
+    // new face afterwards, and returns how far that moved any corner.
+    addFaceFromChain({ corners, image, side, chain, placement, acceptedMerges }) {
         const { model, faceIndex } = commitPlacement(this.model, placement, acceptedMerges);
+        const flat = flattenIfWarped(model, faceIndex);
         this._snapshot();
-        this.model = model;
+        this.model = flat.model;
         this.records.push({
-            type: 'faceFromSides', method: 'parallel', corners, image, side, pair,
+            type: 'faceFromSides', method: 'parallel', corners, image, side, chain,
             check: placement.check,
             merges: acceptedMerges.map(m => ({ corner: m.corner, vertex: m.vertex, gap: m.gap })),
+            maxMove: flat.maxMove,
             face: faceIndex,
         });
         this.nextSide = null;
         this.save();
-        return faceIndex;
+        return flat;
     }
 
+    // Adds one face across a hole, or across a chain of sides with no measurements.
     close(loop) {
         const res = closeLoop(this.model, loop);
         this._snapshot();
         this.model = res.model;
-        this.records.push({ type: 'close', loop, maxMove: res.maxMove, maxFlatness: res.maxFlatness });
+        this.records.push({
+            type: 'close', loop, maxMove: res.maxMove, maxFlatness: res.maxFlatness,
+            face: res.model.f.length - 1,
+        });
         this.nextSide = null;
         this.save();
         return res;
@@ -121,7 +118,7 @@ export class Session {
         const model = closeLoopTriangulated(this.model, loop);
         this._snapshot();
         this.model = model;
-        this.records.push({ type: 'close', loop, triangulated: true, maxMove: 0 });
+        this.records.push({ type: 'close', loop, triangulated: true, maxMove: 0, face: model.f.length - 1 });
         this.nextSide = null;
         this.save();
     }

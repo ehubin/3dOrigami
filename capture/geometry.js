@@ -237,84 +237,153 @@ function findMerges(model, positions, vertex, opts) {
     return merges;
 }
 
-// ----------------------------------------------- a face from two selected sides
+// ----------------------------------------- a face from a chain of selected sides
 
 const MIN_CORNER_SIN = 0.1; // about 6 degrees from straight: too unstable to fit a photo to
-const MIN_TRIANGLE_SIN = 0.01;
 
-// Two free sides that meet at a corner, as vertices {a, b, c} with the free
-// sides running a -> b -> c, or null if they don't form a corner of one hole.
-export function adjacentFreeSides(model, s1, s2) {
-    const resolve = s => {
-        const f = model.f[s.face];
-        return f ? { a: f[s.side], b: f[(s.side + 1) % f.length] } : null;
-    };
-    const p = resolve(s1), q = resolve(s2);
-    if (!p || !q) return null;
+// Free sides that join end to end, as { vertices: [v0, ..., vk], closed }, with
+// the free sides running v0 -> v1 -> ... -> vk. If they form a complete hole,
+// closed is true and vertices holds each corner once. Null if they don't form
+// one unbroken chain.
+export function chainFromSides(model, sides) {
+    if (sides.length < 2) return null;
     const free = freeSides(model);
-    const isFree = e => free.some(s => s.a === e.a && s.b === e.b);
-    if (!isFree(p) || !isFree(q)) return null;
-    const forward = p.b === q.a, backward = q.b === p.a;
-    if (forward === backward) return null; // not touching, or the same two corners
-    return forward ? { a: p.a, b: p.b, c: q.b } : { a: q.a, b: q.b, c: p.b };
+    const next = new Map();
+    for (const s of sides) {
+        const f = model.f[s.face];
+        if (!f) return null;
+        const a = f[s.side], b = f[(s.side + 1) % f.length];
+        if (!free.some(e => e.a === a && e.b === b)) return null;
+        if (next.has(a)) return null; // the same side twice, or a fork
+        next.set(a, b);
+    }
+    const targets = new Set(next.values());
+    if (targets.size !== next.size) return null;
+    const starts = [...next.keys()].filter(a => !targets.has(a));
+    if (starts.length > 1) return null;
+    const closed = starts.length === 0;
+    const start = closed ? [...next.keys()][0] : starts[0];
+    const vertices = [start];
+    for (let v = next.get(start); v !== undefined && v !== start; v = next.get(v)) vertices.push(v);
+    const visited = closed ? vertices.length : vertices.length - 1;
+    if (visited !== sides.length) return null; // a separate loop was also selected
+    return { vertices, closed };
 }
 
 const sinBetween = (u, v) => length(cross(u, v)) / (length(u) * length(v));
 
-// A triangle across two sides that meet at a corner. Needs no photo or angle,
-// because all three corners are already known.
-export function triangleFromSides(model, pair) {
-    const { a, b, c } = pair;
-    const A = model.pt[a], B = model.pt[b], C = model.pt[c];
-    if (sinBetween(sub(C, B), sub(A, B)) < MIN_TRIANGLE_SIN) {
-        throw new Error('These two sides are in a straight line, so they cannot form a triangle');
+// Solves a small square system by Gaussian elimination with pivoting.
+function solveLinear(A, b) {
+    const n = b.length;
+    const M = A.map((r, i) => [...r, b[i]]);
+    for (let c = 0; c < n; c++) {
+        let p = c;
+        for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r;
+        [M[c], M[p]] = [M[p], M[c]];
+        if (Math.abs(M[c][c]) < 1e-12) return null;
+        for (let r = 0; r < n; r++) {
+            if (r === c) continue;
+            const f = M[r][c] / M[c][c];
+            for (let k = c; k <= n; k++) M[r][k] -= f * M[c][k];
+        }
     }
-    return { positions: [C.slice(), B.slice(), A.slice()], vertex: [c, b, a], merges: [] };
+    return M.map((r, i) => r[n] / r[i]);
 }
 
-// Places a photographed face using two selected sides instead of an angle.
-//   side: the side of `shape` that runs c -> b, so side+1 runs b -> a
-// The three known corners fix the plane, and an affine fit lands them exactly,
-// which also removes most of the error from a photo that wasn't square-on.
+// Least-squares affine map from 2D points to 2D points, exact for three points.
+function fitAffine2D(src, dst) {
+    const cx = src.reduce((s, p) => s + p[0], 0) / src.length;
+    const cy = src.reduce((s, p) => s + p[1], 0) / src.length;
+    const size = Math.max(...src.map(p => Math.hypot(p[0] - cx, p[1] - cy)));
+    const norm = p => [(p[0] - cx) / size, (p[1] - cy) / size, 1];
+    const A = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+    const bx = [0, 0, 0], by = [0, 0, 0];
+    src.forEach((p, k) => {
+        const r = norm(p);
+        for (let i = 0; i < 3; i++) {
+            bx[i] += r[i] * dst[k][0];
+            by[i] += r[i] * dst[k][1];
+            for (let j = 0; j < 3; j++) A[i][j] += r[i] * r[j];
+        }
+    });
+    const ax = solveLinear(A, bx), ay = solveLinear(A, by);
+    if (!ax || !ay) return null;
+    return p => {
+        const r = norm(p);
+        return [ax[0] * r[0] + ax[1] * r[1] + ax[2], ay[0] * r[0] + ay[1] * r[1] + ay[2]];
+    };
+}
+
+// Places a photographed face using a chain of selected sides, instead of an angle.
+//   side: the side of `shape` that joins the chain's last side, so corners
+//         side, side+1, ... match the chain's vertices from last to first.
+// The known corners fix the plane, and an affine fit maps the photo onto it,
+// which also removes most of the error from a photo that wasn't square-on. A
+// full perspective fit was tested and rejected: on near-square-on photos it
+// amplifies corner noise more than perspective costs.
 // `check` compares the photo with the known sides, to reveal a bad photo.
-export function computePlacementFromSides(model, shape, side, pair, opts = {}) {
-    const N = shape.length;
-    if (N < 3) throw new Error('A face needs at least three corners');
-    const { a, b, c } = pair;
-    const iC = side, iB = (side + 1) % N, iA = (side + 2) % N;
-    const pB = shape[iB];
-    const u = [shape[iC][0] - pB[0], shape[iC][1] - pB[1]];
-    const v = [shape[iA][0] - pB[0], shape[iA][1] - pB[1]];
-    const lenU = Math.hypot(u[0], u[1]), lenV = Math.hypot(v[0], v[1]);
-    const det = u[0] * v[1] - u[1] * v[0];
-    if (Math.abs(det) < MIN_CORNER_SIN * lenU * lenV) {
-        throw new Error('The corner between those sides is too close to a straight line to fit the photo to it');
+export function computePlacementFromChain(model, shape, side, chain, opts = {}) {
+    const N = shape.length, k = chain.vertices.length - 1;
+    if (N < k + 1) throw new Error('This outline has too few corners for that many selected sides');
+    const known = chain.vertices.slice().reverse();
+    const cornerOf = j => (side + j) % N;
+    const src = known.map((_, j) => shape[cornerOf(j)]);
+    const pts = known.map(v => model.pt[v]);
+
+    let photoStraight = true, modelStraight = true;
+    for (let j = 1; j < k; j++) {
+        const u = [src[j - 1][0] - src[j][0], src[j - 1][1] - src[j][1], 0];
+        const v = [src[j + 1][0] - src[j][0], src[j + 1][1] - src[j][1], 0];
+        if (sinBetween(u, v) >= MIN_CORNER_SIN) photoStraight = false;
+        if (sinBetween(sub(pts[j - 1], pts[j]), sub(pts[j + 1], pts[j])) >= MIN_CORNER_SIN) modelStraight = false;
     }
-    const A = model.pt[a], B = model.pt[b], C = model.pt[c];
-    const U = sub(C, B), V = sub(A, B);
-    if (sinBetween(U, V) < MIN_CORNER_SIN) {
-        throw new Error('The two selected sides are too close to a straight line to fit the photo to them');
-    }
+    if (photoStraight) throw new Error('The corners between those sides are too close to a straight line to fit the photo to them');
+    if (modelStraight) throw new Error('The selected sides are too close to a straight line to fit the photo to them');
+
+    const pm = { pt: pts };
+    const nrm = faceNormal(pm, pts.map((_, i) => i));
+    const origin = faceCentroid(pm, pts.map((_, i) => i));
+    const ex = normalize(sub(pts[1], pts[0])), ey = cross(nrm, ex);
+    const toPlane = p => {
+        const d = sub(p, origin);
+        return [dot(d, ex), dot(d, ey)];
+    };
+    const fit = fitAffine2D(src, pts.map(toPlane));
+    if (!fit) throw new Error('Could not fit the photo to the selected sides');
 
     const positions = shape.map(p => {
-        const d = [p[0] - pB[0], p[1] - pB[1]];
-        const s = (d[0] * v[1] - d[1] * v[0]) / det;
-        const t = (u[0] * d[1] - u[1] * d[0]) / det;
-        return add(add(B, scale(U, s)), scale(V, t));
+        const [x, y] = fit(p);
+        return add(add(origin, scale(ex, x)), scale(ey, y));
     });
     const vertex = positions.map(() => null);
-    vertex[iC] = c; vertex[iB] = b; vertex[iA] = a;
-    positions[iC] = C.slice(); positions[iB] = B.slice(); positions[iA] = A.slice();
+    known.forEach((v, j) => {
+        vertex[cornerOf(j)] = v;
+        positions[cornerOf(j)] = model.pt[v].slice();
+    });
 
-    const angleOf = (cosine) => Math.acos(Math.max(-1, Math.min(1, cosine))) * 180 / Math.PI;
-    const photoAngle = angleOf((u[0] * v[0] + u[1] * v[1]) / (lenU * lenV));
-    const modelAngle = angleOf(dot(U, V) / (length(U) * length(V)));
-    const extent = Math.max(...shape.map(p => Math.hypot(p[0] - pB[0], p[1] - pB[1])));
+    // Photo against model: side length ratios, and the corner angles between them.
+    const hypot2 = (p, q) => Math.hypot(q[0] - p[0], q[1] - p[1]);
+    const ratios = [];
+    for (let j = 0; j < k; j++) ratios.push(hypot2(src[j], src[j + 1]) / dist(pts[j], pts[j + 1]));
+    const angleAt = (u, v) => Math.acos(Math.max(-1, Math.min(1, dot(u, v) / (length(u) * length(v))))) * 180 / Math.PI;
+    let angleDiff = 0;
+    for (let j = 1; j < k; j++) {
+        const pa = angleAt([src[j - 1][0] - src[j][0], src[j - 1][1] - src[j][1], 0], [src[j + 1][0] - src[j][0], src[j + 1][1] - src[j][1], 0]);
+        const ma = angleAt(sub(pts[j - 1], pts[j]), sub(pts[j + 1], pts[j]));
+        angleDiff = Math.max(angleDiff, Math.abs(pa - ma));
+    }
+    // How far new corners lie from known ones, in multiples of the shortest known side.
+    const shortest = Math.min(...ratios.map((_, j) => hypot2(src[j], src[j + 1])));
+    let reach = 0;
+    shape.forEach((p, i) => {
+        if (vertex[i] !== null) return;
+        reach = Math.max(reach, Math.min(...src.map(q => hypot2(p, q))) / shortest);
+    });
     const check = {
-        ratioDiff: Math.abs((lenU / lenV) / (length(U) / length(V)) - 1),
-        angleDiff: Math.abs(photoAngle - modelAngle),
-        // How far the face reaches, compared with the sides it was fitted to.
-        reach: extent / Math.min(lenU, lenV),
+        ratioDiff: Math.max(...ratios) / Math.min(...ratios) - 1,
+        angleDiff,
+        reach,
+        knownFlatness: faceFlatness(pm, pts.map((_, i) => i)),
     };
     return { positions, vertex, merges: findMerges(model, positions, vertex, opts), check };
 }
@@ -405,19 +474,53 @@ export function flattenFaces(model, passes = 50) {
     return { model: out, maxMove, maxFlatness };
 }
 
-// Adds one face across a loop, flattening if it isn't already flat.
-export function closeLoop(model, loop, opts = {}) {
-    const flatTol = opts.flatTolerance ?? 1e-6;
-    const base = cloneModel(model);
+// Whether a vertex list can become one new face, running through it in reverse.
+// It may be a whole hole, or a chain of sides whose ends the new face joins.
+function assertFillable(model, loop) {
     const face = loop.slice().reverse();
-    base.f.push(rotateToConvexStart(base.pt, face));
-    const before = Math.max(...base.f.map(f => faceFlatness(base, f)));
-    if (before <= flatTol) return { model: base, maxMove: 0, maxFlatness: before };
-    return flattenFaces(base);
+    const pts = { pt: model.pt };
+    // Newell's vector has length of twice the area, so zero means no real shape.
+    let nx = 0, ny = 0, nz = 0, perimeter = 0;
+    face.forEach((vi, i) => {
+        const p = pts.pt[vi], q = pts.pt[face[(i + 1) % face.length]];
+        nx += (p[1] - q[1]) * (p[2] + q[2]);
+        ny += (p[2] - q[2]) * (p[0] + q[0]);
+        nz += (p[0] - q[0]) * (p[1] + q[1]);
+        perimeter += dist(p, q);
+    });
+    if (Math.hypot(nx, ny, nz) < 1e-3 * perimeter * perimeter) {
+        throw new Error('These sides are in a straight line, so they cannot form a face');
+    }
+    const present = new Set();
+    model.f.forEach(f => f.forEach((a, i) => present.add(`${a},${f[(i + 1) % f.length]}`)));
+    face.forEach((a, i) => {
+        if (present.has(`${a},${face[(i + 1) % face.length]}`)) {
+            throw new Error('A face across these sides would give an edge three faces, or a face turned inside out');
+        }
+    });
 }
 
-// Fills a loop with triangles, moving no corners (ear clipping).
+// Flattens after adding a face at `faceIndex`. Only the new face triggers it
+// until the shape is closed, so adding a triangle never moves a corner.
+export function flattenIfWarped(model, faceIndex, flatTol = 1e-6) {
+    const worst = isClosed(model)
+        ? Math.max(...model.f.map(f => faceFlatness(model, f)))
+        : faceFlatness(model, model.f[faceIndex]);
+    if (worst <= flatTol) return { model, maxMove: 0, maxFlatness: worst };
+    return flattenFaces(model);
+}
+
+// Adds one face across a hole or a chain of sides, flattening if needed.
+export function closeLoop(model, loop, opts = {}) {
+    assertFillable(model, loop);
+    const base = cloneModel(model);
+    base.f.push(rotateToConvexStart(base.pt, loop.slice().reverse()));
+    return flattenIfWarped(base, base.f.length - 1, opts.flatTolerance);
+}
+
+// Fills a hole or chain with triangles, moving no corners (ear clipping).
 export function closeLoopTriangulated(model, loop) {
+    assertFillable(model, loop);
     const out = cloneModel(model);
     const face = loop.slice().reverse();
     const n = faceNormal(out, face);

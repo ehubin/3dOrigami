@@ -2,7 +2,7 @@
 
 import {
     freeSides, freeLoops, closeLoop, isClosed, faceFlatness,
-    orderPixelCorners, isSimplePolygon, adjacentFreeSides,
+    orderPixelCorners, isSimplePolygon, chainFromSides,
 } from './geometry.js';
 import { Session, IdbStore, shareAttempts, shareWithFallback } from './session.js';
 import { Preview } from './preview.js';
@@ -19,7 +19,7 @@ const CHECK_RATIO_WARN = 0.05; // photo vs selected sides: length ratio differen
 const CHECK_ANGLE_WARN = 3;    // degrees
 const CHECK_RATIO_NOTE = 0.01;
 const CHECK_ANGLE_NOTE = 1;
-const CHECK_REACH_WARN = 3;    // face reach, in multiples of the shorter selected side
+const CHECK_REACH_WARN = 2;    // how far new corners lie from known ones, in shortest known sides
 
 const mm = cm => `${(cm * 10).toFixed(1)} mm`;
 const parseNumber = s => parseFloat(String(s).replace(',', '.')); // phones may type a decimal comma
@@ -70,33 +70,42 @@ const alertDialog = (title, text) => showDialog({ title, text, buttons: [{ label
 
 // -------------------------------------------------------------- model screen
 
-// The second selected side, when joining a new face to two sides at once.
-let secondSide = null;
-let pickingSecond = false;
+// Selecting several sides, to join a new face to all of them at once. The first
+// is session.nextSide; these are the others.
+let selecting = false;
+let extraSides = [];
 
 const sameSide = (p, q) => !!p && !!q && p.face === q.face && p.side === q.side;
 
-function clearSecondSide() {
-    secondSide = null;
-    pickingSecond = false;
+function clearSelection() {
+    selecting = false;
+    extraSides = [];
 }
 
-// The two selected sides as corners {a, b, c}, if they meet at a corner.
-function selectedPair() {
-    if (!secondSide || !session.nextSide) return null;
-    return adjacentFreeSides(session.model, session.nextSide, secondSide);
+// The selected sides as an unbroken chain, or null.
+function selectedChain() {
+    if (extraSides.length === 0 || !session.nextSide) return null;
+    return chainFromSides(session.model, [session.nextSide, ...extraSides]);
+}
+
+function toggleSelected(ref) {
+    if (sameSide(ref, session.nextSide)) {
+        // The first side can only go if another can take its place.
+        if (extraSides.length) session.setNextSide(extraSides.shift());
+    } else if (extraSides.some(s => sameSide(s, ref))) {
+        extraSides = extraSides.filter(s => !sameSide(s, ref));
+    } else {
+        extraSides.push(ref);
+    }
 }
 
 const preview = new Preview($('preview'), index => {
     const s = orderedSides()[index];
     if (!s) return;
     const ref = { face: s.face, side: s.side };
-    if (pickingSecond) {
-        if (sameSide(ref, session.nextSide)) return; // still waiting for a different side
-        secondSide = ref;
-        pickingSecond = false;
+    if (selecting) {
+        toggleSelected(ref);
     } else {
-        secondSide = null;
         session.setNextSide(ref);
     }
     renderModel();
@@ -130,15 +139,18 @@ function renderModel(note) {
         selected = 0;
         session.setNextSide({ face: sides[0].face, side: sides[0].side });
     }
-    const second = secondSide ? sides.findIndex(s => sameSide(s, secondSide)) : -1;
-    if (second < 0) secondSide = null;
-    const pair = selectedPair();
-    const notAtCorner = !!secondSide && !pair;
-    preview.update(session.model, sides, [selected, second].filter(i => i >= 0), currentFace());
+    extraSides = extraSides.filter(e => sides.some(s => sameSide(s, e)));
+    const extras = extraSides.map(e => sides.findIndex(s => sameSide(s, e)));
+    const chain = selectedChain();
+    const broken = extraSides.length > 0 && !chain;
+    const known = extraSides.length + 1;
+    const numbers = [selected, ...extras].map(i => i + 1).sort((p, q) => p - q).join(', ');
+    preview.update(session.model, sides, [selected, ...extras].filter(i => i >= 0), currentFace());
 
     const empty = session.isEmpty;
     const closed = isClosed(session.model);
-    const noPhoto = closed || notAtCorner || pickingSecond;
+    // A photo needs one side or an open chain: a complete hole has nothing to measure.
+    const noPhoto = closed || broken || (selecting && known === 1) || !!(chain && chain.closed);
     $('emptyState').hidden = !empty;
     $('nameInput').value = session.name;
     $('undoBtn').disabled = session.undoStack.length === 0;
@@ -147,9 +159,13 @@ function renderModel(note) {
     $('newBtn').disabled = empty;
     $('takeBtn').classList.toggle('disabled', noPhoto);
     $('galleryBtn').classList.toggle('disabled', noPhoto);
-    $('triangleBtn').hidden = !pair;
-    $('twoSidesBtn').disabled = sides.length < 2;
-    $('twoSidesBtn').textContent = pickingSecond || secondSide ? 'Cancel 2 sides' : 'Select 2 sides';
+    $('fillBtn').hidden = !chain;
+    if (chain) {
+        const corners = chain.vertices.length;
+        $('fillBtn').textContent = chain.closed ? 'Fill hole' : corners === 3 ? 'Add triangle' : `Add ${corners}-sided face`;
+    }
+    $('selectBtn').disabled = sides.length < 2;
+    $('selectBtn').textContent = selecting ? 'Cancel selection' : 'Select sides';
 
     if (note) {
         setStatus(note.text, note.warn);
@@ -157,34 +173,29 @@ function renderModel(note) {
         setStatus('');
     } else if (closed) {
         setStatus(`Closed shape with ${session.faceCount} faces. Ready to export.`);
-    } else if (pickingSecond) {
-        setStatus(`Side ${selected + 1} selected. Tap the second side.`);
-    } else if (notAtCorner) {
-        setStatus(`Sides ${selected + 1} and ${second + 1} don't meet at a corner. Tap Cancel and pick two sides that do.`, true);
-    } else if (pair) {
-        setStatus(`Sides ${selected + 1} and ${second + 1} selected. Add a triangle, or take a photo if the face has more sides. No angle needed.`);
+    } else if (selecting && known === 1) {
+        setStatus(`Side ${selected + 1} selected. Tap the other sides of the new face.`);
+    } else if (broken) {
+        setStatus(`Sides ${numbers} don't join end to end. Tap a number to add or remove a side.`, true);
+    } else if (chain && chain.closed) {
+        setStatus(`Sides ${numbers} make a complete hole. Fill it with one face.`);
+    } else if (chain) {
+        const button = $('fillBtn').textContent;
+        setStatus(`Sides ${numbers} selected. Use ${button} if only one side is missing, or take a photo if more are. No angle needed.`);
     } else {
         setStatus(`Tap a number to choose where the next face attaches. Selected: side ${selected + 1}.`);
     }
 }
 
-$('twoSidesBtn').addEventListener('click', () => {
-    if (pickingSecond || secondSide) clearSecondSide();
-    else pickingSecond = true;
+$('selectBtn').addEventListener('click', () => {
+    if (selecting) clearSelection();
+    else selecting = true;
     renderModel();
 });
 
-$('triangleBtn').addEventListener('click', async () => {
-    const pair = selectedPair();
-    if (!pair) return;
-    try {
-        session.addTriangle(pair);
-    } catch (err) {
-        await alertDialog('Could not add the triangle', err.message);
-        return;
-    }
-    clearSecondSide();
-    renderModel();
+$('fillBtn').addEventListener('click', () => {
+    const chain = selectedChain();
+    if (chain) fillAcross(chain.vertices);
 });
 
 function flatnessNote() {
@@ -199,7 +210,7 @@ $('nameInput').addEventListener('change', e => {
 
 $('undoBtn').addEventListener('click', () => {
     session.undo();
-    clearSecondSide();
+    clearSelection();
     renderModel();
 });
 
@@ -212,7 +223,7 @@ $('newBtn').addEventListener('click', async () => {
     if (ok) {
         session.reset();
         session.save();
-        clearSecondSide();
+        clearSelection();
         renderModel();
     }
 });
@@ -235,37 +246,43 @@ $('closeBtn').addEventListener('click', async () => {
         if (pick === null) return;
         loop = loops[pick];
     }
-    const trial = closeLoop(session.model, loop);
-    if (trial.maxMove > FLATTEN_WARN_CM) {
-        const how = await showDialog({
-            title: 'This hole is not flat',
-            text: `Keeping one flat face would move a corner by up to ${mm(trial.maxMove)}. Splitting it into triangles moves nothing, but adds fold lines.`,
-            buttons: [
-                { label: 'Keep one face, move corners', value: 'flat', primary: true },
-                { label: 'Split into triangles', value: 'tri' },
-                { label: 'Cancel', value: null },
-            ],
-        });
-        if (!how) return;
-        if (how === 'tri') {
-            try {
+    await fillAcross(loop);
+});
+
+// Adds one face across a hole or chain, asking first if that would move corners.
+async function fillAcross(loop) {
+    try {
+        const trial = closeLoop(session.model, loop);
+        if (trial.maxMove > FLATTEN_WARN_CM) {
+            const how = await showDialog({
+                title: 'These sides are not flat',
+                text: `Keeping one flat face would move a corner by up to ${mm(trial.maxMove)}. Splitting it into triangles moves nothing, but adds fold lines.`,
+                buttons: [
+                    { label: 'Keep one face, move corners', value: 'flat', primary: true },
+                    { label: 'Split into triangles', value: 'tri' },
+                    { label: 'Cancel', value: null },
+                ],
+            });
+            if (!how) return;
+            if (how === 'tri') {
                 session.closeTriangulated(loop);
-            } catch (e) {
-                await alertDialog('Could not close', e.message);
+                clearSelection();
+                renderModel();
                 return;
             }
-            clearSecondSide();
-            renderModel();
-            return;
         }
+        const res = session.close(loop);
+        clearSelection();
+        const moved = res.maxMove > 0.001 ? ` Corners moved by up to ${mm(res.maxMove)}.` : '';
+        if (isClosed(session.model)) {
+            renderModel({ text: `Closed shape with ${session.faceCount} faces.${moved}${flatnessNote()}` });
+        } else {
+            renderModel(moved ? { text: `Face added.${moved}` } : undefined);
+        }
+    } catch (err) {
+        await alertDialog('Could not add the face', err.message);
     }
-    const res = session.close(loop);
-    clearSecondSide();
-    const moved = res.maxMove > 0.001 ? ` Corners moved by up to ${mm(res.maxMove)}.` : '';
-    renderModel(isClosed(session.model)
-        ? { text: `Closed shape with ${session.faceCount} faces.${moved}${flatnessNote()}` }
-        : undefined);
-});
+}
 
 // Share first, then copy and download, which work everywhere.
 $('shareBtn').addEventListener('click', () => {
@@ -340,7 +357,7 @@ function startPhoto(image) {
         manual: false,
         stage: 'outline',
         joinSide: null,
-        pair: selectedPair(), // set when joining to two sides, so no angle is needed
+        chain: selectedChain(), // set when joining to several sides, so no angle is needed
         joinSides: [],
         view: { k: 1, ox: 0, oy: 0 },
         fitted: false,
@@ -428,29 +445,35 @@ function outlineDone() {
     renderPhoto();
 }
 
-const isJoinSide = i => (ph.pair ? ph.joinSides.includes(i) : ph.joinSide === i);
+const isJoinSide = i => (ph.chain ? ph.joinSides.includes(i) : ph.joinSide === i);
+const chainSideCount = () => ph.chain.vertices.length - 1;
 
 function pickJoinSide(i) {
     ph.message = null;
-    if (!ph.pair) {
+    if (!ph.chain) {
         ph.joinSide = i;
     } else if (ph.joinSides.includes(i)) {
         ph.joinSides = ph.joinSides.filter(s => s !== i);
     } else {
         ph.joinSides.push(i);
-        if (ph.joinSides.length > 2) ph.joinSides.shift();
+        if (ph.joinSides.length > chainSideCount()) ph.joinSides.shift();
     }
     renderPhoto();
 }
 
-// The first of two photo sides that meet at a corner, in on-screen order, or
-// null. Winding then decides which photo side matches which selected side.
+// The first of the picked photo sides, if they run in an unbroken row, or null.
+// Winding then decides which photo side matches which selected side.
 function firstOfPickedSides() {
-    if (ph.joinSides.length !== 2) return null;
-    const [p, q] = ph.joinSides;
+    const k = chainSideCount();
     const n = ph.corners.length;
-    if ((p + 1) % n === q) return p;
-    if ((q + 1) % n === p) return q;
+    if (ph.joinSides.length !== k || k >= n) return null;
+    for (const start of ph.joinSides) {
+        let inRow = true;
+        for (let j = 1; j < k; j++) {
+            if (!ph.joinSides.includes((start + j) % n)) inRow = false;
+        }
+        if (inRow) return start;
+    }
     return null;
 }
 
@@ -458,15 +481,20 @@ function renderJoin() {
     const first = session.isEmpty;
     $('joinForm').hidden = false;
     $('lengthRow').hidden = !first;
-    $('angleRow').hidden = first || !!ph.pair;
-    $('joinLabel').textContent = ph.pair ? 'Shared sides' : 'Shared side';
-    const pairTogether = firstOfPickedSides() !== null;
+    $('angleRow').hidden = first || !!ph.chain;
+    $('joinLabel').textContent = ph.chain ? 'Shared sides' : 'Shared side';
+    const pairTogether = ph.chain ? firstOfPickedSides() !== null : false;
     if (ph.message) {
         setHint(ph.message.text, ph.message.warn);
-    } else if (ph.pair) {
-        setHint(ph.joinSides.length === 2 && !pairTogether
-            ? 'Those two sides don\'t meet at a corner. Pick two that do.'
-            : 'Pick the two sides of this face that join the two selected sides.', ph.joinSides.length === 2 && !pairTogether);
+    } else if (ph.chain) {
+        const k = chainSideCount();
+        if (k >= ph.corners.length) {
+            setHint(`This outline has ${ph.corners.length} sides, too few to join ${k} selected sides and leave one open. Go back and check it.`, true);
+        } else if (ph.joinSides.length === k && !pairTogether) {
+            setHint(`Those sides aren't next to each other. Pick ${k} sides in a row.`, true);
+        } else {
+            setHint(`Pick the ${k} sides of this face that join the selected sides, in a row.`);
+        }
     } else if (first) {
         setHint('Pick a side you can measure, then type its real length.');
     } else {
@@ -489,7 +517,7 @@ function renderJoin() {
         {
             label: first ? 'Add first face' : 'Place face',
             primary: true,
-            disabled: ph.pair ? !pairTogether : ph.joinSide === null,
+            disabled: ph.chain ? !pairTogether : ph.joinSide === null,
             onClick: placeFace,
         },
     ]);
@@ -508,16 +536,22 @@ function checkNote(check) {
     return parts.length ? { text: parts.join(' '), warn: warnMatch || warnReach } : null;
 }
 
-async function placeFaceFromSides(corners, image) {
-    const args = { corners, side: firstOfPickedSides(), pair: ph.pair };
-    const placement = session.previewFaceFromSides(args);
+async function placeFaceFromChain(corners, image) {
+    const args = { corners, side: firstOfPickedSides(), chain: ph.chain };
+    const placement = session.previewFaceFromChain(args);
     const accepted = await confirmMerges(placement);
     if (accepted === null) return;
-    session.addFaceFromSides({ ...args, image, placement, acceptedMerges: accepted });
-    clearSecondSide();
+    const flat = session.addFaceFromChain({ ...args, image, placement, acceptedMerges: accepted });
+    clearSelection();
     leavePhoto();
     const note = checkNote(placement.check);
-    if (note) renderModel(note);
+    const moved = flat.maxMove > 0.005 ? `Corners moved by up to ${mm(flat.maxMove)} to keep the face flat.` : '';
+    if (note || moved) {
+        renderModel({
+            text: [note && note.text, moved].filter(Boolean).join(' '),
+            warn: (note && note.warn) || flat.maxMove > FLATTEN_WARN_CM,
+        });
+    }
 }
 
 function selectedSideNumber() {
@@ -529,8 +563,8 @@ async function placeFace() {
     const image = { w: ph.image.width, h: ph.image.height };
     const corners = ph.corners.map(c => c.slice());
     try {
-        if (ph.pair) {
-            await placeFaceFromSides(corners, image);
+        if (ph.chain) {
+            await placeFaceFromChain(corners, image);
             return;
         }
         if (session.isEmpty) {
